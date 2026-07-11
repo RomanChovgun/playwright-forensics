@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Iframe — content loss on reload</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 700px; }
+  iframe { width: 100%; height: 200px; border: 1px solid #ddd; border-radius: 4px; margin-top: 0.5rem; }
+  button { padding: 0.5rem 1rem; cursor: pointer; margin: 0.5rem 0; }
+  .controls { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Iframe Container</h2>
+  <div class="controls">
+    <button id="reload-iframe" data-testid="reload-iframe-btn" onclick="reloadIframe()">
+      🔄 Reload iframe
+    </button>
+    <button id="replace-iframe" data-testid="replace-iframe-btn" onclick="replaceIframe()">
+      🗑️ Replace iframe
+    </button>
+  </div>
+  <p id="iframe-status">Status: iframe loaded</p>
+  <iframe id="main-iframe" data-testid="main-iframe" srcdoc="
+    <html>
+    <body style='font-family:sans-serif;padding:1rem;'>
+      <h3>Iframe Inner Content</h3>
+      <p>This is content inside the iframe.</p>
+      <button onclick='alert(&quot;Click from iframe!&quot;)' data-testid='iframe-btn' style='padding:8px 16px;cursor:pointer;'>
+        Click me
+      </button>
+      <ul>
+        <li data-testid='iframe-item-1'>List item 1</li>
+        <li data-testid='iframe-item-2'>List item 2</li>
+        <li data-testid='iframe-item-3'>List item 3</li>
+      </ul>
+      <p data-testid='iframe-description'>Description: test iframe content</p>
+    </body>
+    </html>
+  "></iframe>
+</div>
+
+<script>
+  let iframeCounter = 1;
+
+  function reloadIframe() {
+    const iframe = document.getElementById('main-iframe');
+    const status = document.getElementById('iframe-status');
+
+    status.textContent = `Status: reloading... (${++iframeCounter})`;
+
+    iframe.srcdoc = `
+      <html>
+      <body style='font-family:sans-serif;padding:1rem;'>
+        <h3>Iframe After Reload #${iframeCounter}</h3>
+        <p>Content was updated.</p>
+        <button onclick='alert(&quot;Click after reload!&quot;)' data-testid='iframe-btn' style='padding:8px 16px;cursor:pointer;'>
+          Updated button
+        </button>
+        <ul>
+          <li data-testid='iframe-item-1'>New item 1 (reload ${iframeCounter})</li>
+          <li data-testid='iframe-item-4'>New item 4</li>
+        </ul>
+        <p data-testid='iframe-description'>Description after reload #${iframeCounter}</p>
+      </body>
+      </html>
+    `;
+
+    status.textContent = `Status: reloaded (#${iframeCounter})`;
+  }
+
+  function replaceIframe() {
+    const oldIframe = document.getElementById('main-iframe');
+    const status = document.getElementById('iframe-status');
+
+    const newIframe = document.createElement('iframe');
+    newIframe.id = 'main-iframe';
+    newIframe.setAttribute('data-testid', 'main-iframe');
+    newIframe.srcdoc = `
+      <html>
+      <body style='font-family:sans-serif;padding:1rem;'>
+        <h3>⚠️ New Iframe (different content)</h3>
+        <p>This iframe replaced the previous one. Old content is gone.</p>
+        <button onclick='alert(&quot;New iframe!&quot;)' data-testid='new-iframe-btn' style='padding:8px 16px;cursor:pointer;'>
+          New iframe button
+        </button>
+      </body>
+      </html>
+    `;
+    newIframe.style.width = '100%';
+    newIframe.style.height = '200px';
+    newIframe.style.border = '1px solid #ddd';
+    newIframe.style.borderRadius = '4px';
+
+    oldIframe.replaceWith(newIframe);
+    status.textContent = 'Status: iframe replaced with new content';
+  }
+</script>
+</body>
+</html>

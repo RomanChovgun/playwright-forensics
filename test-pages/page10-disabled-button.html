@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Disabled Button — clicking a disabled submit</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  .form-group { margin-bottom: 1rem; }
+  label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+  input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hint { font-size: 0.85rem; color: #666; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Submit Form</h2>
+  <p>Form requires agreeing to terms before the button becomes enabled.</p>
+  <div class="form-group">
+    <label for="name">Name</label>
+    <input type="text" id="name" placeholder="Enter name" />
+  </div>
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="agree-checkbox" onchange="toggleSubmit()" />
+      I agree to the terms
+    </label>
+  </div>
+  <button id="submit-btn" data-testid="submit-btn" disabled onclick="submitForm()">
+    Submit
+  </button>
+  <p class="hint" id="status-hint">Please agree to the terms first</p>
+</div>
+
+<script>
+  function toggleSubmit() {
+    const btn = document.getElementById('submit-btn');
+    const hint = document.getElementById('status-hint');
+    const checked = document.getElementById('agree-checkbox').checked;
+    btn.disabled = !checked;
+    hint.textContent = checked ? 'Button is now enabled — click to submit' : 'Please agree to the terms first';
+  }
+
+  function submitForm() {
+    alert('Form submitted!');
+  }
+</script>
+</body>
+</html>

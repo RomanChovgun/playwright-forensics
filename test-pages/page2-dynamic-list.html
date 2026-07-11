@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dynamic List — elements replaced on refresh</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  ul { list-style: none; padding: 0; }
+  li { padding: 0.75rem; margin: 0.25rem 0; background: #f8f9fa; border-radius: 4px; cursor: pointer; }
+  li:hover { background: #e9ecef; }
+  button { padding: 0.5rem 1rem; cursor: pointer; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Task List</h2>
+  <button id="refresh-btn" onclick="refreshList()">🔄 Refresh list</button>
+  <ul id="task-list">
+    <li data-id="1">Task 1: Buy milk</li>
+    <li data-id="2">Task 2: Write report</li>
+    <li data-id="3">Task 3: Call client</li>
+  </ul>
+  <p id="status">Total: 3 tasks</p>
+</div>
+
+<script>
+  const tasks = [
+    { id: 4, text: 'Task 4: Write code' },
+    { id: 5, text: 'Task 5: Run tests' },
+    { id: 6, text: 'Task 6: Submit PR' },
+    { id: 7, text: 'Task 7: Team sync' },
+  ];
+
+  let clickCount = 0;
+
+  function refreshList() {
+    clickCount++;
+    const list = document.getElementById('task-list');
+    const status = document.getElementById('status');
+
+    list.innerHTML = '';
+
+    const newTasks = tasks.slice(0, 2 + (clickCount % 3));
+    newTasks.forEach(t => {
+      const li = document.createElement('li');
+      li.setAttribute('data-id', t.id.toString());
+      li.textContent = t.text;
+      list.appendChild(li);
+    });
+
+    status.textContent = `Total: ${newTasks.length} tasks (updated)` +
+      (clickCount % 2 === 0 ? ' — cache cleared' : '');
+  }
+</script>
+</body>
+</html>

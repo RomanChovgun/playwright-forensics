@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CSS Animations — continuously moving elements</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 600px; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+  .scene { position: relative; height: 180px; margin: 1rem 0; border: 1px solid #eee; border-radius: 8px; overflow: hidden; }
+  .moving-box {
+    position: absolute;
+    width: 100px;
+    height: 50px;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  @keyframes slideLoop {
+    0% { left: 10px; }
+    50% { left: 200px; }
+    100% { left: 10px; }
+  }
+  @keyframes pulse {
+    0% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.3; transform: scale(0.8); }
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  #box-slide { top: 15px; background: #007bff; animation: slideLoop 3s ease-in-out infinite; }
+  #box-pulse { top: 75px; left: 150px; background: #28a745; animation: pulse 1.5s ease-in-out infinite; }
+  #box-spin { top: 75px; left: 280px; background: #dc3545; animation: spin 2s linear infinite; width: 60px; height: 60px; border-radius: 50%; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>CSS Animations (infinite)</h2>
+  <p>Elements animate continuously via @keyframes. Clicking during animation is unstable.</p>
+
+  <div class="scene">
+    <div id="box-slide" class="moving-box" data-testid="animated-slide">🎯 Slide</div>
+    <div id="box-pulse" class="moving-box" data-testid="animated-pulse">🎯 Pulse</div>
+    <div id="box-spin" class="moving-box" data-testid="animated-spin">🎯 Spin</div>
+  </div>
+
+  <p id="animation-status" style="font-size:0.85rem;color:#666;">
+    Elements are constantly animating. Attempting to click will result in an actionability timeout.
+  </p>
+</div>
+</body>
+</html>

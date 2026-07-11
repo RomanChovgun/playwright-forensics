@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Not Editable — attempting fill() on wrong element</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  .field { margin-bottom: 1rem; }
+  label { display: block; margin-bottom: 0.25rem; font-weight: 600; }
+  .display-box { padding: 0.75rem; background: #f0f0f0; border-radius: 4px; cursor: pointer; }
+  input { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+  .note { font-size: 0.85rem; color: #dc3545; margin-top: 0.25rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>User Profile</h2>
+  <div class="field">
+    <label>Name (display)</label>
+    <div class="display-box" id="name-display" data-testid="name-display">
+      John Doe
+    </div>
+    <p class="note">This is a div, not an input — fill() will fail</p>
+  </div>
+  <div class="field">
+    <label for="email-input">Email (real input)</label>
+    <input type="email" id="email-input" data-testid="email-input" value="john@example.com" />
+  </div>
+</div>
+</body>
+</html>

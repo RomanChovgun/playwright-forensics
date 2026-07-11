@@ -1,0 +1,12 @@
+export { test, expect } from './fixtures.js';
+export type { ForensicsFixture } from './fixtures.js';
+export type { DomNode } from './collector/dom-snapshot.js';
+export type { MutationRecord } from './collector/mutation-log.js';
+export type { ParsedError, ParsedLocator, FailureType } from './analyzer/error-parser.js';
+export type { Verdict } from './analyzer/verdict-builder.js';
+export type { DiffResult } from './analyzer/dom-diff.js';
+export type { SelectorTrace } from './analyzer/selector-tracer.js';
+export { loadConfig } from './config.js';
+export type { ForensicsConfig } from './config.js';
+export { registerPlugin, loadPlugins, getPlugin } from './plugin.js';
+export type { ForensicsPlugin, PluginContext } from './plugin.js';

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Slow API — loading state then content appears</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  #content { margin-top: 1rem; }
+  .spinner { color: #666; font-style: italic; }
+  .result-item { padding: 0.5rem; margin: 0.25rem 0; background: #f8f9fa; border-radius: 4px; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Server Data</h2>
+  <button id="load-btn" data-testid="load-data-btn" onclick="loadData()">
+    📥 Load data
+  </button>
+  <div id="content">
+    <p>Click the button to load data from the server.</p>
+  </div>
+</div>
+
+<script>
+  function loadData() {
+    const btn = document.getElementById('load-btn');
+    const content = document.getElementById('content');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading...';
+    content.innerHTML = '<p class="spinner">⏳ Loading data, please wait...</p>';
+
+    const delay = 4000;
+
+    setTimeout(() => {
+      const items = [
+        { id: 101, title: 'January Report', status: 'ready' },
+        { id: 102, title: 'February Report', status: 'ready' },
+        { id: 103, title: 'March Report', status: 'in progress' },
+      ];
+
+      content.innerHTML = items.map(item => `
+        <div class="result-item" data-id="${item.id}" data-testid="report-${item.id}">
+          <strong>${item.title}</strong>
+          <span style="color:${item.status === 'ready' ? 'green' : 'orange'}">(${item.status})</span>
+          <button onclick="alert('Opened: ${item.title}')" data-testid="open-report-${item.id}">📂 Open</button>
+        </div>
+      `).join('');
+
+      btn.disabled = false;
+      btn.textContent = '📥 Load data';
+    }, delay);
+  }
+</script>
+</body>
+</html>

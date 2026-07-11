@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SPA Router — DOM replaced on navigation</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  nav { margin-bottom: 1rem; }
+  nav a { margin-right: 1rem; cursor: pointer; color: blue; text-decoration: underline; }
+  .page { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; }
+  .page h2 { margin-top: 0; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<nav>
+  <a onclick="navigate('home')" data-testid="nav-home">🏠 Home</a>
+  <a onclick="navigate('profile')" data-testid="nav-profile">👤 Profile</a>
+  <a onclick="navigate('settings')" data-testid="nav-settings">⚙️ Settings</a>
+</nav>
+<div id="app"></div>
+
+<script>
+  const pages = {
+    home: {
+      title: '🏠 Home Page',
+      body: `
+        <p>Welcome! This is the SPA home page.</p>
+        <button id="home-action" data-testid="home-action-btn">Get Started</button>
+        <p id="home-message" class="info">Click the button to begin</p>
+      `,
+    },
+    profile: {
+      title: '👤 User Profile',
+      body: `
+        <p>Name: Test User</p>
+        <p>Email: test@example.com</p>
+        <button id="profile-edit" data-testid="profile-edit-btn">✏️ Edit</button>
+        <div id="profile-editor" style="display:none">
+          <input type="text" id="edit-name" value="Test User" />
+          <button onclick="saveProfile()">💾 Save</button>
+        </div>
+      `,
+    },
+    settings: {
+      title: '⚙️ Settings',
+      body: `
+        <label><input type="checkbox" data-testid="setting-notif" /> Notifications</label><br/>
+        <label><input type="checkbox" data-testid="setting-theme" /> Dark theme</label><br/>
+        <button id="settings-save" data-testid="settings-save-btn">💾 Save settings</button>
+      `,
+    },
+  };
+
+  function navigate(page) {
+    const app = document.getElementById('app');
+    const p = pages[page];
+    if (!p) return;
+
+    app.innerHTML = `
+      <div class="page">
+        <h2>${p.title}</h2>
+        ${p.body}
+      </div>
+    `;
+
+    history.pushState({ page }, '', `#${page}`);
+  }
+
+  function saveProfile() {
+    const editor = document.getElementById('profile-editor');
+    const name = document.getElementById('edit-name').value;
+    editor.style.display = 'block';
+    setTimeout(() => {
+      alert(`Profile saved: ${name}`);
+    }, 100);
+  }
+
+  navigate('home');
+</script>
+</body>
+</html>

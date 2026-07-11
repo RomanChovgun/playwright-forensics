@@ -1,0 +1,86 @@
+{
+  "name": "playwright-forensics",
+  "version": "0.1.0",
+  "description": "Test forensics for Playwright — causal analysis of test failures with DOM snapshots, diff, and human-readable verdicts",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  },
+  "bin": {
+    "pwf": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fixtures": {
+      "types": "./dist/fixtures.d.ts",
+      "default": "./dist/fixtures.js"
+    },
+    "./reporter": {
+      "types": "./dist/reporter/reporter.d.ts",
+      "default": "./dist/reporter/reporter.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist test-results",
+    "prebuild": "npm run clean",
+    "test": "playwright test",
+    "test:ci": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright test --reporter=html",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "preversion": "npm run build && npm test"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40"
+  },
+  "optionalDependencies": {
+    "chokidar": "^5.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0"
+  },
+  "keywords": [
+    "playwright",
+    "forensics",
+    "debugging",
+    "test-failure",
+    "dom-analysis",
+    "e2e",
+    "testing",
+    "automation",
+    "quality-assurance"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Roman Chovgun",
+    "url": "https://t.me/romanchovgun"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anomalyco/playwright-forensics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anomalyco/playwright-forensics/issues"
+  },
+  "homepage": "https://github.com/anomalyco/playwright-forensics#readme",
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/sponsors/anomalyco"
+  }
+}

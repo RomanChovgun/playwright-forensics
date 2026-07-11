@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hidden Elements — display, visibility, opacity toggles</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  .control-group { margin-bottom: 1.5rem; padding: 1rem; background: #f8f9fa; border-radius: 4px; }
+  button { padding: 0.5rem 1rem; cursor: pointer; margin-right: 0.5rem; }
+  .target-btn { margin-top: 0.5rem; padding: 0.5rem 1rem; border: none; border-radius: 4px; color: white; }
+  .state-label { font-size: 0.85rem; color: #666; margin-left: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Visibility Test</h2>
+
+  <div class="control-group">
+    <h3>1. display: none</h3>
+    <button id="toggle-display" data-testid="toggle-display" onclick="toggleDisplay()">
+      Show/Hide (display)
+    </button>
+    <button id="display-target" data-testid="display-target"
+            class="target-btn" style="display:none; background:#007bff;">
+      🎯 Target (display)
+    </button>
+    <span class="state-label" id="display-state">hidden (display: none)</span>
+  </div>
+
+  <div class="control-group">
+    <h3>2. visibility: hidden</h3>
+    <button id="toggle-visibility" data-testid="toggle-visibility" onclick="toggleVisibility()">
+      Show/Hide (visibility)
+    </button>
+    <button id="visibility-target" data-testid="visibility-target"
+            class="target-btn" style="visibility:hidden; background:#28a745;">
+      🎯 Target (visibility)
+    </button>
+    <span class="state-label" id="visibility-state">hidden (visibility: hidden)</span>
+  </div>
+
+  <div class="control-group">
+    <h3>3. opacity: 0</h3>
+    <button id="toggle-opacity" data-testid="toggle-opacity" onclick="toggleOpacity()">
+      Show/Hide (opacity)
+    </button>
+    <button id="opacity-target" data-testid="opacity-target"
+            class="target-btn" style="opacity:0; background:#ffc107; color: #333;">
+      🎯 Target (opacity)
+    </button>
+    <span class="state-label" id="opacity-state">hidden (opacity: 0)</span>
+  </div>
+
+  <div class="control-group">
+    <h3>4. Hidden via re-render</h3>
+    <button id="toggle-rerender" data-testid="toggle-rerender" onclick="toggleRerender()">
+      Hide via re-render
+    </button>
+    <div id="rerender-target-container">
+      <button id="rerender-target" data-testid="rerender-target"
+              class="target-btn" style="background:#17a2b8;">
+        🎯 Target (re-render)
+      </button>
+    </div>
+    <span class="state-label" id="rerender-state">visible</span>
+  </div>
+</div>
+
+<script>
+  function toggleDisplay() {
+    const el = document.getElementById('display-target');
+    const state = document.getElementById('display-state');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    state.textContent = el.style.display === 'none' ? 'hidden (display: none)' : 'visible';
+  }
+
+  function toggleVisibility() {
+    const el = document.getElementById('visibility-target');
+    const state = document.getElementById('visibility-state');
+    el.style.visibility = el.style.visibility === 'hidden' ? 'visible' : 'hidden';
+    state.textContent = el.style.visibility === 'hidden' ? 'hidden (visibility: hidden)' : 'visible';
+  }
+
+  function toggleOpacity() {
+    const el = document.getElementById('opacity-target');
+    const state = document.getElementById('opacity-state');
+    el.style.opacity = el.style.opacity === '0' ? '1' : '0';
+    state.textContent = el.style.opacity === '0' ? 'hidden (opacity: 0)' : 'visible';
+  }
+
+  function toggleRerender() {
+    const container = document.getElementById('rerender-target-container');
+    const state = document.getElementById('rerender-state');
+    container.innerHTML = `
+      <button id="rerender-target" data-testid="rerender-target"
+              class="target-btn" style="display:none; background:#17a2b8;">
+        🎯 Target (re-render + hidden)
+      </button>
+    `;
+    state.textContent = 'hidden (re-render + display: none)';
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# GitHub linguist overrides
+.gitattributes linguist-generated
+.gitignore linguist-generated
+.editorconfig linguist-generated
+*.md linguist-detectable

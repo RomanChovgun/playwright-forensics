@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Form Re-render — data-testid changes</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 400px; }
+  input { display: block; width: 100%; margin-bottom: 1rem; padding: 0.5rem; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+  .loading { opacity: 0.5; pointer-events: none; }
+  .success { background: #d4edda; padding: 1rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Registration Form</h2>
+  <div id="form-container">
+    <input type="text" id="name" placeholder="Name" value="Test" />
+    <button data-testid="submit-btn" id="submit-btn" onclick="submitForm()">
+      Submit
+    </button>
+  </div>
+  <div id="result" style="display:none"></div>
+</div>
+
+<script>
+  function submitForm() {
+    const container = document.getElementById('form-container');
+    const result = document.getElementById('result');
+
+    container.innerHTML = `
+      <p>Sending data...</p>
+      <button data-testid="loading-btn" disabled>⏳ Sending...</button>
+    `;
+
+    setTimeout(() => {
+      container.style.display = 'none';
+      result.style.display = 'block';
+      result.innerHTML = '<p>✅ Form submitted successfully!</p>';
+    }, 1000);
+  }
+</script>
+</body>
+</html>

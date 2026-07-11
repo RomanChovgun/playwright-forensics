@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Navigation Race — click triggers page navigation</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  button { padding: 0.5rem 1rem; cursor: pointer; margin: 0.25rem; }
+  .info { margin-top: 1rem; padding: 1rem; background: #e7f3ff; border-radius: 4px; }
+  a { display: inline-block; padding: 0.5rem 1rem; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 0.25rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Navigation Race Demo</h2>
+  <p>Clicking the link navigates to another page.</p>
+  <div>
+    <a href="page1-form-render.html" id="nav-link" data-testid="nav-link">
+      ➡️ Go to Form Page
+    </a>
+  </div>
+  <div class="info" id="page-info">
+    <p>Current page: Navigation Race Demo</p>
+    <p>After clicking the link, the page navigates away and old elements become stale.</p>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Strict Mode — multiple identical buttons</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; }
+  .card { border: 1px solid #ccc; border-radius: 8px; padding: 1.5rem; max-width: 500px; }
+  .item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; margin: 0.25rem 0; background: #f8f9fa; border-radius: 4px; }
+  button { padding: 0.4rem 0.8rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Shopping Cart</h2>
+  <div id="cart-items">
+    <div class="item" data-id="1">
+      <span>Product A — $10</span>
+      <button class="remove-btn" data-testid="remove-btn">Remove</button>
+    </div>
+    <div class="item" data-id="2">
+      <span>Product B — $20</span>
+      <button class="remove-btn" data-testid="remove-btn">Remove</button>
+    </div>
+    <div class="item" data-id="3">
+      <span>Product C — $30</span>
+      <button class="remove-btn" data-testid="remove-btn">Remove</button>
+    </div>
+  </div>
+  <p style="margin-top:1rem;color:#666;font-size:0.85rem;">
+    All remove buttons share the same data-testid. getByTestId('remove-btn') matches 3 elements.
+  </p>
+</div>
+</body>
+</html>
