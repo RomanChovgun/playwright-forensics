@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Playwright Forensics, please report it privately by opening a [GitHub Security Advisory](https://github.com/anomalyco/playwright-forensics/security/advisories/new).
+If you discover a security vulnerability in Playwright Forensics, please report it privately by opening a [GitHub Security Advisory](https://github.com/RomanChovgun/playwright-forensics/security/advisories/new).
 
 Please do **not** report security vulnerabilities through public GitHub issues.
 

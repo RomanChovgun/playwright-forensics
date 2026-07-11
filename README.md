@@ -3,8 +3,8 @@
   <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/npm/v/playwright-forensics?style=for-the-badge&logo=npm&label=version" alt="npm version" />
   <img src="https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node >= 18" />
-  <img src="https://img.shields.io/github/stars/anomalyco/playwright-forensics?style=for-the-badge&logo=github&label=stars" alt="GitHub stars" />
-  <img src="https://img.shields.io/github/last-commit/anomalyco/playwright-forensics?style=for-the-badge&logo=github&label=updated" alt="last commit" />
+  <img src="https://img.shields.io/github/stars/RomanChovgun/playwright-forensics?style=for-the-badge&logo=github&label=stars" alt="GitHub stars" />
+  <img src="https://img.shields.io/github/last-commit/RomanChovgun/playwright-forensics?style=for-the-badge&logo=github&label=updated" alt="last commit" />
 </div>
 
 <br />
@@ -526,7 +526,7 @@ The test suite includes:
 
 ## 📄 License
 
-MIT © [Roman Chovgun](https://github.com/anomalyco) — [Telegram](https://t.me/romanchovgun)
+MIT © [Roman Chovgun](https://github.com/RomanChovgun) — [Telegram](https://t.me/romanchovgun)
 
 ---
 
@@ -534,7 +534,7 @@ MIT © [Roman Chovgun](https://github.com/anomalyco) — [Telegram](https://t.me
 
 **Roman Chovgun** is a test automation architect passionate about making developer tools that turn cryptic test failures into clear, actionable stories.
 
-- 🔗 [GitHub](https://github.com/anomalyco)
+- 🔗 [GitHub](https://github.com/RomanChovgun)
 - 💬 [Telegram](https://t.me/romanchovgun)
 
-If you find this tool valuable, consider [sponsoring](https://github.com/sponsors/anomalyco) or starring the repo. Contributions, issues, and feature requests are always welcome.
+If you find this tool valuable, consider [sponsoring](https://github.com/sponsors/RomanChovgun) or starring the repo. Contributions, issues, and feature requests are always welcome.
