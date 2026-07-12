@@ -32,9 +32,20 @@ jobs:
       - run: npm run test:trace-cli
       - run: npm test
       - run: npm pack --dry-run
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+      - name: Build release package
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm pack
       - name: Publish with provenance
         if: startsWith(github.ref, 'refs/tags/v') && inputs['dry-run'] != true
-        run: npm publish --provenance
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            npm publish --provenance --tag next
+          else
+            npm publish --provenance
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create GitHub release
@@ -42,3 +53,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: '*.tgz'
