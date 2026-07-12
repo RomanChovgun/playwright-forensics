@@ -125,7 +125,7 @@ The goal: **Every test failure should come with a debrief.** Not a stack trace �
 | `selector-tracer.ts` | Evaluates the AST through snapshot history | Uses scoped chains, implicit roles, accessible names and direct text; ambiguity becomes a limitation. |
 | `dom-diff.ts` | Identity-aware structural diff | Keeps text/testid mutations as `changed` and reorder as `moved`, with match confidence. |
 | `verdict-builder.ts` | 25 evidence-based verdict templates | Emits `confirmed`, `likely`, or `insufficient-evidence` with evidence and limitations. |
-| `trace-reader.ts` | Best-effort `trace.zip` reader | Adds actions, network and console evidence; unknown records degrade to warnings. |
+| `trace-reader.ts` | Version-tolerant `trace.zip` reader | Normalizes actions, DOM snapshots, network, console, source locations, and subtree references; unknown records degrade to warnings. |
 | `plugin.ts` | Full plugin system with `onVerdict` and `onReport` hooks | Lazy `createRequire(import.meta.url)` — first call only. Falls back to dynamic `import()`. Duplicate plugin detection with a console warning. Plugins can modify the verdict or the report text/HTML. |
 
 ---
@@ -145,7 +145,44 @@ Requires **Node >= 18** and **@playwright/test >= 1.40**.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Trace-First Quick Start
+
+No custom fixture or manual `forensics.snapshot()` calls are required. Enable Playwright tracing:
+
+```ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  use: {
+    trace: 'retain-on-failure',
+  },
+});
+```
+
+Run the tests, then analyze any failed trace:
+
+```bash
+npx playwright test
+npx pwf analyze test-results/my-failed-test/trace.zip --output trace-report/
+```
+
+The command reconstructs the failed action and available DOM snapshots, correlates network and console evidence, and writes:
+
+- `forensics-report.html`
+- `forensics-report.txt`
+- `forensics-report.json`
+
+```bash
+npx pwf analyze trace.zip --open
+```
+
+Trace versions 3–8 are accepted through version-tolerant adapters. The current Playwright trace format is covered by a real browser-generated trace test. Unknown or partially decodable records are reported as limitations instead of confident conclusions.
+
+---
+
+## 🧩 Fixture-Assisted Workflow
+
+Use the fixture when you need explicit domain-specific checkpoints or mutation batches.
 
 ### 1️⃣ Add the reporter
 
@@ -271,13 +308,14 @@ The same error type gets different explanations depending on the DOM history:
 
 ### DOM Diff with Identity Tracking
 
-Most DOM diff tools compare by **position** (first child vs first child). This breaks when elements are reordered. Our diff uses **identity keys**:
+Most DOM diff tools compare by **position**. The matcher instead combines:
 
-1. `id` attribute (highest priority — HTML spec guarantees uniqueness)
-2. `data-testid` attribute (Playwright convention)
-3. Fallback: `tag + text`
+1. structural snapshot identity
+2. `id` and `data-testid`
+3. accessible name and direct text
+4. a low-confidence positional fallback
 
-When children are swapped, the diff correctly reports **no change**. When a child's `data-testid` changes, it's detected as a modification of the same element — not a removal + addition.
+Reordered children are reported as `moved`. Text and `data-testid` mutations remain changes to the same matched element instead of becoming misleading removal/addition pairs.
 
 ---
 
@@ -285,11 +323,21 @@ When children are swapped, the diff correctly reports **no change**. When a chil
 
 ```
 npx pwf open <path>                        — Open a forensics report
+npx pwf analyze <trace.zip> [-o dir]       — Analyze a trace without fixtures
 npx pwf report [dir]                       — Summary of all failures
 npx pwf watch [pattern] [...args]          — File watcher with auto re-run
 npx pwf diff <run1> <run2>                 — Compare two test runs
 npx pwf demo                               — Quick reference
 ```
+
+### analyze
+
+```bash
+npx pwf analyze ./test-results/failed-test/trace.zip
+npx pwf analyze ./trace.zip --output ./report --open
+```
+
+Finds the failed action, decodes available Playwright DOM snapshots, and generates standalone HTML/TXT/JSON reports. It exits with an error for missing or invalid archives and records compatibility gaps in the report.
 
 ### open
 

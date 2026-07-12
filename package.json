@@ -1,7 +1,7 @@
 {
   "name": "playwright-forensics",
   "version": "0.2.0-rc.1",
-  "description": "Test forensics for Playwright — causal analysis of test failures with DOM snapshots, diff, and human-readable verdicts",
+  "description": "Evidence-based Playwright failure analysis from trace.zip, DOM snapshots, network, and console data",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -41,6 +41,7 @@
     "test:ci": "playwright test",
     "typecheck": "tsc --noEmit",
     "test:hardening": "playwright test test/scenarios/unit.spec.ts test/scenarios/hardening.spec.ts",
+    "test:trace-cli": "node test/smoke-trace-cli.mjs",
     "pack:check": "npm pack --dry-run",
     "test:headed": "playwright test --headed",
     "test:report": "playwright test --reporter=html",

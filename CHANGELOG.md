@@ -7,6 +7,10 @@
 - Locator AST/engine for scoped chains, ARIA semantics, regex/exact, filters, nth, CSS/basic XPath, and frame evidence.
 - Bounded/redacted DOM schema v2, per-snapshot mutation batches, and JSON reports.
 - Best-effort Playwright trace action/network/console ingestion.
+- Trace-first `pwf analyze trace.zip` workflow with no fixture or manual snapshots required.
+- Playwright DOM snapshot and subtree-reference decoding for trace versions 3–8.
+- Shared failure-analysis pipeline and standalone HTML/TXT/JSON artifact writer.
+- Real browser-generated trace and packaged CLI smoke tests.
 - Golden-style hardening tests, package smoke CI, and gated release workflow.
 
 ### Fixed

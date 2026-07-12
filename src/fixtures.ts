@@ -6,20 +6,18 @@ import { collectDomSnapshot } from './collector/dom-snapshot.js';
 import type { DomNode } from './collector/dom-snapshot.js';
 import { flushMutationLog, startMutationLog } from './collector/mutation-log.js';
 import type { MutationBatch, MutationFlush, MutationRecord } from './collector/mutation-log.js';
-import { traceSelector } from './analyzer/selector-tracer.js';
-import type { SelectorTrace } from './analyzer/selector-tracer.js';
-import { diffDomTrees } from './analyzer/dom-diff.js';
 import type { DiffResult } from './analyzer/dom-diff.js';
 import { generateHtmlReport } from './reporter/html-report.js';
-import { parseErrorMessage } from './analyzer/error-parser.js';
-import { buildVerdict, renderVerdictText } from './analyzer/verdict-builder.js';
+import { renderVerdictText } from './analyzer/verdict-builder.js';
 import type { Verdict } from './analyzer/verdict-builder.js';
+import { analyzeFailure } from './analyzer/analysis-pipeline.js';
 import { loadConfig } from './config.js';
 import type { ForensicsConfig } from './config.js';
 import { loadPlugins, runVerdictPlugins, runReportPlugins } from './plugin.js';
 import type { ForensicsPlugin, PluginContext } from './plugin.js';
 import { readPlaywrightTrace } from './trace/trace-reader.js';
 import type { TraceEvidence } from './trace/trace-reader.js';
+import { traceEvidenceForReport } from './reporter/artifacts.js';
 
 export interface ForensicsFixture {
   forensics: {
@@ -181,22 +179,10 @@ async function generateReport(
   const rawError = testInfo.error?.message ?? '';
   const errorMessage = redactSensitiveText(stripAnsi(rawError), config);
 
-  const parsed = parseErrorMessage(errorMessage);
   const traceEvidence = await collectTraceEvidence(testInfo, config, history);
-
-  const diffs = history.length >= 2
-    ? diffDomTrees(history[history.length - 2], history[history.length - 1])
-    : [];
-
-  const l = parsed.locator;
-  let trace: SelectorTrace | undefined;
-  if (l?.expression && history.length > 1) {
-    trace = traceSelector(l.expression, history, history.length - 1);
-  } else if (l?.value && l.type && history.length > 1) {
-    trace = traceSelector(l.value, history, history.length - 1, l.type);
-  }
-
-  let verdict = buildVerdict(parsed, trace, history, diffs);
+  const analysis = analyzeFailure({ errorMessage, history, traceEvidence, config });
+  const { parsed, diffs, selectorTrace: trace } = analysis;
+  let verdict = analysis.verdict;
 
   const pluginContext: PluginContext = {
     testName: testInfo.title,
@@ -248,7 +234,7 @@ async function generateReport(
     verdict,
     diffs,
     mutationLogs,
-    trace: traceEvidence,
+    trace: traceEvidenceForReport(traceEvidence),
     snapshots: history,
   }, null, 2), 'utf-8');
 

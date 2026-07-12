@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -28,8 +28,9 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
-      - run: npm test
       - run: npm run build
+      - run: npm run test:trace-cli
+      - run: npm test
       - run: npm pack --dry-run
       - name: Publish with provenance
         if: startsWith(github.ref, 'refs/tags/v') && inputs['dry-run'] != true

@@ -5,6 +5,7 @@ import { join, resolve, relative } from 'node:path';
 import { spawn } from 'node:child_process';
 import { resetConfigCache } from './config.js';
 import { escapeHtml } from './escape.js';
+import { analyzeTraceFile } from './trace/analyze-trace.js';
 
 function openInBrowser(filePath: string): void {
   const platform = process.platform;
@@ -46,8 +47,41 @@ async function main() {
     case 'diff':
       await diffReports(args[1], args[2]);
       break;
+    case 'analyze':
+      await analyzeTrace(args[1], args.slice(2));
+      break;
     default:
       showHelp();
+  }
+}
+
+function optionValue(args: string[], long: string, short?: string): string | undefined {
+  const index = args.findIndex(value => value === long || value === short);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+async function analyzeTrace(path: string | undefined, args: string[]) {
+  if (!path) {
+    console.error('❌ Specify a Playwright trace: npx pwf analyze <trace.zip>');
+    process.exitCode = 1;
+    return;
+  }
+  const output = optionValue(args, '--output', '-o');
+  try {
+    const result = await analyzeTraceFile(path, { outputDir: output });
+    console.log(`✅ Trace analyzed: ${result.tracePath}`);
+    console.log(`   Confidence: ${result.analysis.verdict.confidence}`);
+    console.log(`   Verdict: ${result.analysis.verdict.label}`);
+    console.log(`   HTML: ${result.paths.html}`);
+    console.log(`   JSON: ${result.paths.json}`);
+    if (result.analysis.warnings.length) {
+      console.log(`   Limitations: ${result.analysis.warnings.length}`);
+    }
+    if (args.includes('--open')) openInBrowser(result.paths.html);
+    return result.paths;
+  } catch (error) {
+    console.error(`❌ ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
   }
 }
 
@@ -362,6 +396,7 @@ async function runDemo() {
   console.log('  npx pwf report [dir]       — Build summary report');
   console.log('  npx pwf watch [pattern]    — Watch & re-run tests');
   console.log('  npx pwf diff <run1> <run2> — Diff two test runs');
+  console.log('  npx pwf analyze <trace.zip>  — Analyze a Playwright trace');
   console.log('  npx pwf demo               — This help');
 }
 
@@ -372,6 +407,7 @@ function showHelp() {
   console.log('  npx pwf report [dir]       — Build a summary from all reports');
   console.log('  npx pwf watch [pattern]    — Watch test files & re-run on changes');
   console.log('  npx pwf diff <run1> <run2> — Compare failures between two runs');
+  console.log('  npx pwf analyze <trace.zip> [-o dir] [--open] — Analyze a trace without fixtures');
   console.log('  npx pwf demo               — Show usage instructions');
   console.log('');
   console.log('Examples:');
@@ -379,6 +415,7 @@ function showHelp() {
   console.log('  npx pwf report test-results/');
   console.log('  npx pwf watch "test/**/*.spec.ts"');
   console.log('  npx pwf diff test-results/run1/ test-results/run2/');
+  console.log('  npx pwf analyze test-results/example/trace.zip --output trace-report/');
 }
 
 main().catch((err) => {

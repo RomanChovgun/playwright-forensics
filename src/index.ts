@@ -12,6 +12,10 @@ export type { LocatorExpression, LocatorStep, TextMatcher } from './analyzer/loc
 export type { LocatorQueryResult } from './analyzer/locator/engine.js';
 export { readPlaywrightTrace } from './trace/trace-reader.js';
 export type { TraceAction, TraceConsoleEvent, TraceEvidence, TraceNetworkEvent, TraceReaderOptions } from './trace/trace-reader.js';
+export { analyzeTraceFile } from './trace/analyze-trace.js';
+export type { AnalyzeTraceFileResult } from './trace/analyze-trace.js';
+export { analyzeFailure } from './analyzer/analysis-pipeline.js';
+export type { FailureAnalysis } from './analyzer/analysis-pipeline.js';
 export { loadConfig } from './config.js';
 export type { ForensicsConfig, RedactionConfig, TraceConfig } from './config.js';
 export { registerPlugin, loadPlugins, getPlugin } from './plugin.js';
