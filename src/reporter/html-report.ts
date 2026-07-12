@@ -2,7 +2,8 @@ import type { DomNode } from '../collector/dom-snapshot.js';
 import type { DiffResult } from '../analyzer/dom-diff.js';
 import type { SelectorTrace } from '../analyzer/selector-tracer.js';
 import type { Verdict } from '../analyzer/verdict-builder.js';
-import type { MutationRecord } from '../collector/mutation-log.js';
+import type { MutationBatch } from '../collector/mutation-log.js';
+import type { TraceEvidence } from '../trace/trace-reader.js';
 import { renderVerdictHtml } from '../analyzer/verdict-builder.js';
 import { escapeHtml } from '../escape.js';
 
@@ -13,9 +14,11 @@ export function generateHtmlReport(params: {
   diffs: DiffResult[];
   trace?: SelectorTrace;
   verdict: Verdict;
-  mutationLogs?: MutationRecord[][];
+  mutationLogs?: MutationBatch[];
+  traceEvidence?: TraceEvidence;
+  snapshotLimit?: number;
 }): string {
-  const { testName, errorMessage, history, diffs, verdict, mutationLogs } = params;
+  const { testName, errorMessage, history, diffs, verdict, mutationLogs, traceEvidence, snapshotLimit } = params;
 
   const categoryColors: Record<string, string> = {
     'locator-not-found': '#6f42c1',
@@ -59,6 +62,8 @@ export function generateHtmlReport(params: {
   .diff-added { background: #d4edda; color: #155724; }
   .diff-removed { background: #f8d7da; color: #721c24; }
   .diff-changed { background: #fff3cd; color: #856404; }
+  .confidence { font-size: .75rem; padding: .15rem .45rem; border-radius: 4px; background: #e9ecef; }
+  .notice { color: #856404; background: #fff3cd; border-radius: 6px; padding: .6rem; margin-bottom: .75rem; }
   .diff-path { font-weight: 600; }
   .diff-detail { display: block; margin-left: 1rem; font-size: 0.8rem; opacity: 0.8; }
   .dom-tree { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6; background: #f8f9fa; padding: 1rem; border-radius: 8px; overflow-x: auto; }
@@ -93,11 +98,11 @@ export function generateHtmlReport(params: {
 
   <div class="section">
     <h2>📋 Snapshot Timeline</h2>
+    ${history.some(snapshot => snapshot.truncated) ? '<div class="notice">Snapshot data was truncated by configured safety limits.</div>' : ''}
     ${(() => {
-      const displayLen = Math.min(history.length, 25);
-      const offset = history.length > 25 ? history.length - 25 : 0;
-      return (history.length > 25 ? '<p style="color:#999;font-size:0.85rem;margin-bottom:0.5rem;">⚠️ Only last 25 snapshots are shown below</p>' : '')
-        + '<div class="timeline">'
+      const displayLen = history.length;
+      const offset = 0;
+      return (history.length === snapshotLimit ? `<p style="color:#999;font-size:0.85rem;margin-bottom:0.5rem;">Collection is bounded to ${snapshotLimit} snapshots.</p>` : '') + '<div class="timeline">'
         + Array.from({ length: displayLen }, (_, i) => {
             const realIdx = offset + i;
             let cls = 'step';
@@ -122,7 +127,7 @@ export function generateHtmlReport(params: {
     <ul class="diff-list">
       ${diffs.map(d => {
         const cls = d.type === 'added' ? 'diff-added' : d.type === 'removed' ? 'diff-removed' : 'diff-changed';
-        const label = d.type === 'added' ? '➕ ADDED' : d.type === 'removed' ? '➖ REMOVED' : '✏️ CHANGED';
+        const label = d.type === 'added' ? '➕ ADDED' : d.type === 'removed' ? '➖ REMOVED' : d.type === 'moved' ? '↔ MOVED' : '✏️ CHANGED';
         return `<li class="diff-item ${cls}">
           <span class="diff-path">${label}</span> ${escapeHtml(d.path)}
           ${d.oldValue ? `<span class="diff-detail">was: ${escapeHtml(d.oldValue)}</span>` : ''}
@@ -135,9 +140,9 @@ export function generateHtmlReport(params: {
   <div class="section">
     <h2>📝 Mutation Log</h2>
     ${!mutationLogs || mutationLogs.length === 0 ? '<p style="color:#666">Mutation logging was not enabled. Call <code>await forensics.startMutationLog()</code> to capture DOM mutations between snapshots.</p>' : `
-    ${mutationLogs.map((batch, bi) => `
+    ${mutationLogs.map(batch => `
     <div style="margin-bottom:1rem;">
-      <strong style="font-size:0.9rem;">Batch ${bi + 1}: ${batch.length} mutations</strong>
+      <strong style="font-size:0.9rem;">Snapshot ${Math.max(0, batch.snapshotIndex - 1)} → ${batch.snapshotIndex}: ${batch.length} mutations${batch.dropped ? ` (${batch.dropped} dropped)` : ''}</strong>
       <div style="font-family:'SF Mono','Fira Code',monospace;font-size:0.8rem;background:#f8f9fa;padding:0.75rem;border-radius:6px;margin-top:0.25rem;">
       ${batch.slice(0, 20).map(m => {
         let desc = `[${m.type}] <span style="color:#0d6efd">${escapeHtml(m.target)}</span>`;
@@ -152,16 +157,36 @@ export function generateHtmlReport(params: {
   </div>
 
   <div class="section">
+    <h2>🎯 Selector Trace</h2>
+    ${!params.trace ? '<p style="color:#666">No locator expression was available.</p>' : `
+      <p>Found: <strong>${params.trace.found ? 'yes' : 'no'}</strong>; confidence: <strong>${escapeHtml(params.trace.confidence ?? 'likely')}</strong></p>
+      ${(params.trace.disappearanceChanges ?? []).map(value => `<div class="diff-item diff-changed">${escapeHtml(value)}</div>`).join('')}
+      ${(params.trace.limitations ?? []).map(value => `<div class="notice">${escapeHtml(value)}</div>`).join('')}`}
+  </div>
+
+  <div class="section">
+    <h2>🧭 Playwright Trace Evidence</h2>
+    ${!traceEvidence ? '<p style="color:#666">No trace.zip attachment was available at report time.</p>' : `
+      ${traceEvidence.truncated ? '<div class="notice">Trace events were truncated by the configured limit.</div>' : ''}
+      ${traceEvidence.warnings.map(value => `<div class="notice">${escapeHtml(value)}</div>`).join('')}
+      <h3>Actions (${traceEvidence.actions.length})</h3>
+      ${traceEvidence.actions.slice(-20).map(action => `<div class="diff-item diff-changed">${escapeHtml(action.apiName)}${action.selector ? ` — ${escapeHtml(action.selector)}` : ''}${action.snapshotIndex !== undefined ? ` (snapshot ${action.snapshotIndex})` : ''}</div>`).join('')}
+      <h3>Network (${traceEvidence.network.length})</h3>
+      ${traceEvidence.network.slice(-20).map(event => `<div class="diff-item">${escapeHtml(event.method ?? '')} ${escapeHtml(event.url)} ${escapeHtml(String(event.status ?? event.failure ?? ''))}</div>`).join('')}
+      <h3>Console (${traceEvidence.console.length})</h3>
+      ${traceEvidence.console.slice(-20).map(event => `<div class="diff-item">${escapeHtml(event.type ?? '')}: ${escapeHtml(event.text)}</div>`).join('')}`}
+  </div>
+
+  <div class="section">
     <h2>💥 Error</h2>
     <div class="error-box">${escapeHtml(errorMessage)}</div>
   </div>
 </div>
 
 <script>
-  // Only the last 25 snapshots are inlined to keep the HTML small
-  const snapshots = ${JSON.stringify(history.length > 25 ? history.slice(-25) : history)};
+  const snapshots = ${safeJson(history)};
   const totalSnapshotCount = ${history.length};
-  const snapshotOffset = totalSnapshotCount > 25 ? totalSnapshotCount - 25 : 0;
+  const snapshotOffset = 0;
   let currentStep = snapshots.length - 1;
 
   function showStep(i) {
@@ -187,7 +212,8 @@ export function generateHtmlReport(params: {
     }
     const idStr = node.id ? ' <span class="attr">id="' + esc(node.id) + '"</span>' : '';
     const classStr = node.className ? ' <span class="attr">class="' + esc(node.className) + '"</span>' : '';
-    const textStr = node.text ? ' <span class="text">' + esc(node.text) + '</span>' : '';
+    const displayText = node.directText || (node.children?.length ? '' : node.text);
+    const textStr = displayText ? ' <span class="text">' + esc(displayText) + '</span>' : '';
     let html = '<div class="node"' + invis + '>' + indent + '&lt;<span class="tag">' + esc(node.tag) + '</span>' + idStr + classStr + attrs + '&gt;' + textStr;
     if (node.children && node.children.length > 0) {
       html += '<br>';
@@ -204,7 +230,15 @@ export function generateHtmlReport(params: {
   }
 
   showStep(currentStep);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'ArrowLeft') prevStep();
+    if (event.key === 'ArrowRight') nextStep();
+  });
 </script>
 </body>
 </html>`;
+}
+
+function safeJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 }

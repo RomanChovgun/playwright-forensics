@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -22,5 +23,37 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
       - run: npm run test:ci
+      - name: Upload redacted forensics reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forensics-${{ matrix.os }}-node-${{ matrix.node-version }}
+          path: |
+            test-results/**/forensics-report.html
+            test-results/**/forensics-report.txt
+            test-results/**/forensics-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  package-smoke:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm pack
+      - name: Install tarball in clean consumer
+        shell: bash
+        run: |
+          mkdir -p /tmp/pwf-consumer
+          cd /tmp/pwf-consumer
+          npm init -y
+          npm install "$GITHUB_WORKSPACE"/playwright-forensics-*.tgz @playwright/test
+          node -e "import('playwright-forensics').then(m => { if (!m.test || !m.readPlaywrightTrace) process.exit(1) })"

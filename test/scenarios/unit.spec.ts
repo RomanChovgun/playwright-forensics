@@ -2,13 +2,16 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test, expect, stripAnsi } from '../fixtures.js';
+import { redactSensitiveText } from '../../src/fixtures.js';
 import { matchPattern } from '../../src/analyzer/error-patterns.js';
 import { parseErrorMessage } from '../../src/analyzer/error-parser.js';
 import { diffDomTrees } from '../../src/analyzer/dom-diff.js';
 import { traceSelector } from '../../src/analyzer/selector-tracer.js';
 import { buildVerdict, renderVerdictText } from '../../src/analyzer/verdict-builder.js';
 import { escapeHtml } from '../../src/escape.js';
-import { loadConfig, resetConfigCache } from '../../src/config.js';
+import { DEFAULT_CONFIG, loadConfig, resetConfigCache } from '../../src/config.js';
+import { collectDomSnapshot } from '../../src/collector/dom-snapshot.js';
+import { flushMutationLog, startMutationLog } from '../../src/collector/mutation-log.js';
 import { registerPlugin, getPlugin, runVerdictPlugins, runReportPlugins } from '../../src/plugin.js';
 import type { DomNode } from '../../src/collector/dom-snapshot.js';
 import type { ParsedError } from '../../src/analyzer/error-parser.js';
@@ -222,13 +225,12 @@ test.describe('diffDomTrees', () => {
     expect(diffs.some(d => d.type === 'changed' && d.oldValue === 'placeholder="name"')).toBe(true);
   });
 
-  test('ignores data-testid in attribute diff (handled by identity key)', () => {
+  test('reports data-testid changes on a matched node', () => {
     const before = makeNode({ attributes: { 'data-testid': 'foo', type: 'text' } });
     const after = makeNode({ attributes: { 'data-testid': 'bar', type: 'text' } });
     const diffs = diffDomTrees(before, after);
-    // type stays same, data-testid excluded from attr diff
-    expect(diffs.some(d => String(d.oldValue).includes('data-testid'))).toBe(false);
-    expect(diffs.some(d => String(d.newValue).includes('data-testid'))).toBe(false);
+    expect(diffs.some(d => String(d.oldValue).includes('data-testid="foo"'))).toBe(true);
+    expect(diffs.some(d => String(d.newValue).includes('data-testid="bar"'))).toBe(true);
   });
 
   test('matches children by id', () => {
@@ -237,8 +239,7 @@ test.describe('diffDomTrees', () => {
     const before = makeNode({ children: [child1, child2] });
     const after = makeNode({ children: [child2, child1] }); // swapped
     const diffs = diffDomTrees(before, after);
-    // No changes expected because same children just reordered
-    expect(diffs.length).toBe(0);
+    expect(diffs.filter(d => d.type === 'moved')).toHaveLength(2);
   });
 
   test('matches children by data-testid', () => {
@@ -247,7 +248,7 @@ test.describe('diffDomTrees', () => {
     const before = makeNode({ children: [child1, child2] });
     const after = makeNode({ children: [child2, child1] });
     const diffs = diffDomTrees(before, after);
-    expect(diffs.length).toBe(0);
+    expect(diffs.filter(d => d.type === 'moved')).toHaveLength(2);
   });
 });
 
@@ -279,7 +280,7 @@ test.describe('traceSelector', () => {
     expect(trace.found).toBe(false);
   });
 
-  test('detects element removal between steps', () => {
+  test('does not claim removal when a same-tag structural candidate remains', () => {
     const makeDiv = (testId: string): DomNode => ({
       tag: 'div', attributes: { 'data-testid': testId }, children: [], visible: true,
     });
@@ -290,10 +291,10 @@ test.describe('traceSelector', () => {
     const trace = traceSelector('foo', snapshots, 1, 'getByTestId');
     expect(trace.found).toBe(true);
     expect(trace.disappearanceChanges).toBeDefined();
-    expect(trace.disappearanceChanges!.some(c => c.includes('removed from DOM'))).toBe(true);
+    expect(trace.disappearanceChanges!.some(c => c.includes('data-testid changed'))).toBe(true);
   });
 
-  test('reports element removed when testid changed (locator no longer matches)', () => {
+  test('reports testid change on the same structural node', () => {
     const snapshots: DomNode[] = [
       { tag: 'div', attributes: { 'data-testid': 'foo' }, children: [], visible: true },
       { tag: 'div', attributes: { 'data-testid': 'bar' }, children: [], visible: true },
@@ -301,7 +302,7 @@ test.describe('traceSelector', () => {
     const trace = traceSelector('foo', snapshots, 1);
     expect(trace.found).toBe(true);
     expect(trace.disappearanceChanges).toBeDefined();
-    expect(trace.disappearanceChanges!.some(c => c.includes('removed from DOM'))).toBe(true);
+    expect(trace.disappearanceChanges!.some(c => c.includes('data-testid changed'))).toBe(true);
   });
 
   test('detects data-testid removed — element no longer matches locator', () => {
@@ -311,8 +312,7 @@ test.describe('traceSelector', () => {
     ];
     const trace = traceSelector('foo', snapshots, 1, 'getByTestId');
     expect(trace.found).toBe(true);
-    // data-testid was removed → locator no longer matches at step 1 → reported as removed from DOM
-    expect(trace.disappearanceChanges!.some(c => c.includes('removed from DOM'))).toBe(true);
+    expect(trace.disappearanceChanges!.some(c => c.includes('data-testid removed'))).toBe(true);
   });
 
   test('detects data-testid added — element becomes matchable', () => {
@@ -507,11 +507,11 @@ test.describe('loadConfig', () => {
     resetConfigCache();
   });
 
-  test('returns default empty config when no files exist', async () => {
+  test('returns safe defaults when no files exist', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'forensics-test-'));
     tmpDirs.push(tmp);
     const config = await loadConfig(tmp);
-    expect(config).toEqual({});
+    expect(config).toEqual(DEFAULT_CONFIG);
   });
 
   test('reads .forensicsrc.json', async () => {
@@ -558,5 +558,104 @@ test.describe('loadConfig', () => {
     await writeFile(join(tmp, '.forensicsrc'), JSON.stringify({ unknownKey: true, snapshotCount: 1 }));
     const config = await loadConfig(tmp);
     expect(config.snapshotCount).toBe(1);
+  });
+
+  test('validates limits and merges nested safety options', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'forensics-test-'));
+    tmpDirs.push(tmp);
+    await writeFile(join(tmp, '.forensicsrc'), JSON.stringify({
+      snapshotCount: 0,
+      maxNodes: 12,
+      maxSnapshotBytes: 'large',
+      maxTextLength: 8,
+      maxMutationRecords: 3,
+      redaction: { replacement: '<hidden>', urlQuery: false },
+      trace: { enabled: true },
+    }));
+    const config = await loadConfig(tmp);
+    expect(config.snapshotCount).toBe(DEFAULT_CONFIG.snapshotCount);
+    expect(config.maxNodes).toBe(12);
+    expect(config.maxSnapshotBytes).toBe(DEFAULT_CONFIG.maxSnapshotBytes);
+    expect(config.redaction.replacement).toBe('<hidden>');
+    expect(config.redaction.enabled).toBe(true);
+    expect(config.trace.enabled).toBe(true);
+  });
+});
+
+test.describe('safe collection pipeline', () => {
+  test('fixture loads config before first snapshot and enforces snapshotCount', async ({ page, forensics }) => {
+    expect(forensics.config.snapshotCount).toBe(DEFAULT_CONFIG.snapshotCount);
+    for (let i = 0; i < DEFAULT_CONFIG.snapshotCount + 3; i++) {
+      await page.setContent(`<main data-sequence="${i}">snapshot ${i}</main>`);
+      await forensics.snapshot();
+    }
+    expect(forensics.history).toHaveLength(DEFAULT_CONFIG.snapshotCount);
+  });
+
+  test('collects schema v2 semantics, visibility and structural identity', async ({ page }) => {
+    await page.setContent(`
+      <label id="label" for="email">Email address</label>
+      <input id="email" aria-labelledby="label" value="private">
+      <button style="opacity:0">Save <span>now</span></button>
+    `);
+    const snapshot = await page.evaluate(collectDomSnapshot, {
+      maxNodes: 100,
+      maxSnapshotBytes: 100_000,
+      maxTextLength: 100,
+      redaction: DEFAULT_CONFIG.redaction,
+    });
+    const input = snapshot.children[1].children.find(node => node.tag === 'input')!;
+    const button = snapshot.children[1].children.find(node => node.tag === 'button')!;
+    expect(snapshot.schemaVersion).toBe(2);
+    expect(input.implicitRole).toBe('textbox');
+    expect(input.accessibleName).toBe('Email address');
+    expect(input.value).toBe('[REDACTED]');
+    expect(input.attributes.value).toBe('[REDACTED]');
+    expect(input.path).toContain('input:nth-of-type(1)');
+    expect(button.directText).toBe('Save');
+    expect(button.visible).toBe(false);
+  });
+
+  test('redacts URL queries and marks node/text truncation', async ({ page }) => {
+    await page.setContent('<main><a href="https://example.test/path?token=secret">abcdefghij</a><i></i><b></b></main>');
+    const snapshot = await page.evaluate(collectDomSnapshot, {
+      maxNodes: 5,
+      maxSnapshotBytes: 100_000,
+      maxTextLength: 4,
+      redaction: DEFAULT_CONFIG.redaction,
+    });
+    const link = snapshot.children[1].children[0].children[0];
+    expect(link.attributes.href).toContain('?[REDACTED]');
+    expect(link.directText).toContain('[truncated]');
+    expect(snapshot.truncated?.reason).toBe('nodes');
+  });
+
+  test('flushes bounded redacted mutation records', async ({ page }) => {
+    await page.setContent('<div id="target"></div>');
+    await page.evaluate(startMutationLog, {
+      maxRecords: 2,
+      maxTextLength: 20,
+      redaction: DEFAULT_CONFIG.redaction,
+    });
+    await page.evaluate(() => {
+      const target = document.querySelector('#target')!;
+      target.setAttribute('data-token', 'secret');
+      target.setAttribute('title', 'one');
+      target.setAttribute('title', 'two');
+    });
+    const flushed = await page.evaluate(flushMutationLog);
+    expect(flushed.records).toHaveLength(2);
+    expect(flushed.dropped).toBeGreaterThan(0);
+    expect(JSON.stringify(flushed.records)).not.toContain('secret');
+  });
+
+  test('redacts secrets from reported error text', () => {
+    const value = redactSensitiveText(
+      'goto https://host/path?token=secret&ok=1 authorization: BearerSecret',
+      DEFAULT_CONFIG,
+    );
+    expect(value).not.toContain('secret');
+    expect(value).not.toContain('BearerSecret');
+    expect(value).toContain('[REDACTED]');
   });
 });

@@ -12,9 +12,13 @@ export interface Verdict {
   explanation: string;
   recommendation: string;
   details?: string[];
+  confidence: 'confirmed' | 'likely' | 'insufficient-evidence';
+  evidence: string[];
+  limitations?: string[];
 }
 
-const VERDICT_TEMPLATES: Record<FailureType, Omit<Verdict, 'explanation' | 'recommendation' | 'details'>> = {
+type VerdictTemplate = Pick<Verdict, 'failureType' | 'icon' | 'label' | 'category'>;
+const VERDICT_TEMPLATES: Record<FailureType, VerdictTemplate> = {
   'locator-timeout': {
     failureType: 'locator-timeout',
     icon: '⏱️',
@@ -192,6 +196,8 @@ export function buildVerdict(
     ...tmpl,
     explanation: '',
     recommendation: '',
+    confidence: parsed.failureType === 'unknown' ? 'insufficient-evidence' : 'likely',
+    evidence: [`Playwright error classified as ${parsed.failureType}`],
   };
 
   let details: string[] = [];
@@ -199,6 +205,8 @@ export function buildVerdict(
   switch (parsed.failureType) {
     case 'locator-timeout': {
       if (trace?.found && trace.lastKnownState) {
+        base.confidence = trace.confidence ?? 'likely';
+        base.evidence.push(`Locator matched snapshot step ${trace.stepFound ?? 'unknown'}`);
         const isLastStep = trace.stepFound === (history?.length ?? 0) - 1;
         if (isLastStep) {
           base.explanation = `Selector "${selector}" exists in the DOM but failed actionability checks within ${parsed.timeoutMs ?? 'the'} timeout.`;
@@ -212,6 +220,7 @@ export function buildVerdict(
           base.category = 'dom-disappeared';
         }
       } else {
+        base.confidence = trace?.confidence === 'insufficient-evidence' ? 'insufficient-evidence' : 'likely';
         base.explanation = `Selector "${selector}" was never found in the DOM within ${parsed.timeoutMs ?? 'the'} timeout.`;
         details.push('The element may have never existed on the page');
         details.push('Possible causes: wrong selector, element loaded after timeout, or page structure changed');
@@ -424,12 +433,19 @@ export function buildVerdict(
   }
 
   base.details = details.length > 0 ? details : undefined;
+  if (trace?.disappearanceChanges?.length) base.evidence.push(...trace.disappearanceChanges);
+  if (trace?.limitations?.length) base.limitations = [...trace.limitations];
+  if (!parsed.locator && ['locator-timeout', 'detached', 'not-visible'].includes(parsed.failureType)) {
+    base.confidence = 'insufficient-evidence';
+    base.limitations = [...(base.limitations ?? []), 'No locator expression could be parsed from the error'];
+  }
   return base;
 }
 
 export function renderVerdictText(v: Verdict): string {
   const lines: string[] = [
     `${v.icon} ${v.label}`,
+    `Confidence: ${v.confidence}`,
     '',
     v.explanation,
   ];
@@ -439,6 +455,14 @@ export function renderVerdictText(v: Verdict): string {
       lines.push(`  • ${d}`);
     }
   }
+  if (v.evidence.length) {
+    lines.push('', 'Evidence:');
+    for (const evidence of v.evidence) lines.push(`  • ${evidence}`);
+  }
+  if (v.limitations?.length) {
+    lines.push('', 'Limitations:');
+    for (const limitation of v.limitations) lines.push(`  • ${limitation}`);
+  }
   if (v.recommendation) {
     lines.push('');
     lines.push(`🔧 Recommendation: ${v.recommendation}`);
@@ -447,12 +471,22 @@ export function renderVerdictText(v: Verdict): string {
 }
 
 export function renderVerdictHtml(v: Verdict): string {
-  let html = `<strong>${escapeHtml(v.icon)} ${escapeHtml(v.label)}</strong><br><br>${escapeHtml(v.explanation)}`;
+  let html = `<strong>${escapeHtml(v.icon)} ${escapeHtml(v.label)}</strong> <span class="confidence">${escapeHtml(v.confidence)}</span><br><br>${escapeHtml(v.explanation)}`;
   if (v.details?.length) {
     html += '<ul>';
     for (const d of v.details) {
       html += `<li>${escapeHtml(d)}</li>`;
     }
+    html += '</ul>';
+  }
+  if (v.evidence.length) {
+    html += '<br><strong>Evidence:</strong><ul>';
+    for (const evidence of v.evidence) html += `<li>${escapeHtml(evidence)}</li>`;
+    html += '</ul>';
+  }
+  if (v.limitations?.length) {
+    html += '<br><strong>Limitations:</strong><ul>';
+    for (const limitation of v.limitations) html += `<li>${escapeHtml(limitation)}</li>`;
     html += '</ul>';
   }
   if (v.recommendation) {

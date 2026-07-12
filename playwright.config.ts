@@ -8,6 +8,7 @@ const baseURL = pathToFileURL(testPagesDir + '/').href;
 
 const reporters: NonNullable<Parameters<typeof defineConfig>[0]['reporter']> = [
   ['list'],
+  ['./test/golden-reporter.ts'],
 ];
 
 // Only attach forensics reporter if dist is built

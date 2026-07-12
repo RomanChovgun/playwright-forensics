@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.0-rc.1] - 2026-07-13
+
+### Added
+- Evidence-based verdict confidence and limitations.
+- Locator AST/engine for scoped chains, ARIA semantics, regex/exact, filters, nth, CSS/basic XPath, and frame evidence.
+- Bounded/redacted DOM schema v2, per-snapshot mutation batches, and JSON reports.
+- Best-effort Playwright trace action/network/console ingestion.
+- Golden-style hardening tests, package smoke CI, and gated release workflow.
+
+### Fixed
+- Reports now survive a closed page while mutation logging is active.
+- `snapshotCount` is loaded before the first snapshot and enforced.
+- Visibility includes opacity and CSS visibility.
+- Text/testid mutations and sibling reorder no longer become false removed/added pairs.
+- Repository metadata and Node 18 watcher compatibility.
+
+### Security
+- Default redaction for form values, secret-like attributes, headers, and URL queries.
+- Node, byte, text, mutation, snapshot, and trace-event limits.
+
 ## [0.1.0] - 2026-07-07
 
 ### Added

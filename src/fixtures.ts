@@ -1,11 +1,11 @@
 import { test as base } from '@playwright/test';
 import type { TestInfo } from '@playwright/test';
-import { writeFile } from 'node:fs/promises';
+import { access, writeFile } from 'node:fs/promises';
 import { EOL } from 'node:os';
 import { collectDomSnapshot } from './collector/dom-snapshot.js';
 import type { DomNode } from './collector/dom-snapshot.js';
-import { startMutationLog, stopMutationLog } from './collector/mutation-log.js';
-import type { MutationRecord } from './collector/mutation-log.js';
+import { flushMutationLog, startMutationLog } from './collector/mutation-log.js';
+import type { MutationBatch, MutationFlush, MutationRecord } from './collector/mutation-log.js';
 import { traceSelector } from './analyzer/selector-tracer.js';
 import type { SelectorTrace } from './analyzer/selector-tracer.js';
 import { diffDomTrees } from './analyzer/dom-diff.js';
@@ -18,47 +18,98 @@ import { loadConfig } from './config.js';
 import type { ForensicsConfig } from './config.js';
 import { loadPlugins, runVerdictPlugins, runReportPlugins } from './plugin.js';
 import type { ForensicsPlugin, PluginContext } from './plugin.js';
+import { readPlaywrightTrace } from './trace/trace-reader.js';
+import type { TraceEvidence } from './trace/trace-reader.js';
 
 export interface ForensicsFixture {
   forensics: {
     snapshot: () => Promise<void>;
     history: readonly DomNode[];
+    config: Readonly<ForensicsConfig>;
     startMutationLog: () => Promise<void>;
-    mutationLogs: readonly MutationRecord[][];
+    mutationLogs: readonly MutationBatch[];
   };
 }
 
-let loadedPlugins: ForensicsPlugin[] | null = null;
-let config: ForensicsConfig | null = null;
-
-async function getPlugins(): Promise<ForensicsPlugin[]> {
-  if (loadedPlugins) return loadedPlugins;
-  if (!config) config = await loadConfig();
-  if (config.plugins && config.plugins.length > 0) {
-    loadedPlugins = await loadPlugins(config.plugins);
-  } else {
-    loadedPlugins = [];
-  }
-  return loadedPlugins;
+interface ForensicsWorkerFixtures {
+  _forensicsConfig: ForensicsConfig;
+  _forensicsPlugins: ForensicsPlugin[];
 }
 
 export function stripAnsi(s: string): string {
   return s.replace(/\x1B\[[\d;]+m/g, '');
 }
 
-export const test = base.extend<ForensicsFixture>({
-  forensics: async ({ page }, use, testInfo) => {
+export function redactSensitiveText(value: string, config: Pick<ForensicsConfig, 'redaction'>): string {
+  if (!config.redaction.enabled) return value;
+  const replacement = config.redaction.replacement;
+  let safe = value
+    .replace(/([?&](?:token|secret|password|passwd|api[_-]?key|auth|session)=)[^&#\s]*/gi, `$1${replacement}`)
+    .replace(/\b(authorization|cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi, `$1: ${replacement}`);
+  if (config.redaction.urlQuery) {
+    safe = safe.replace(/(https?:\/\/[^\s?#]+)\?[^\s#]*/gi, `$1?${replacement}`);
+  }
+  for (const pattern of config.redaction.textPatterns) {
+    try { safe = safe.replace(new RegExp(pattern, 'gi'), replacement); } catch { /* invalid user pattern */ }
+  }
+  return safe;
+}
+
+export const test = base.extend<ForensicsFixture, ForensicsWorkerFixtures>({
+  _forensicsConfig: [async ({}, use) => {
+    await use(await loadConfig());
+  }, { scope: 'worker' }],
+  _forensicsPlugins: [async ({ _forensicsConfig }, use) => {
+    await use(_forensicsConfig.plugins.length > 0 ? await loadPlugins(_forensicsConfig.plugins) : []);
+  }, { scope: 'worker' }],
+  forensics: async ({ page, _forensicsConfig, _forensicsPlugins }, use, testInfo) => {
     const history: DomNode[] = [];
-    const mutationLogs: MutationRecord[][] = [];
+    const mutationLogs: MutationBatch[] = [];
     let mutationLogActive = false;
+    let mutationStartedAt = 0;
+    let snapshotSequence = 0;
+    const mutationOptions = {
+      maxRecords: _forensicsConfig.maxMutationRecords,
+      maxTextLength: _forensicsConfig.maxTextLength,
+      redaction: _forensicsConfig.redaction,
+    };
+
+    const flushMutations = async (snapshotIndex: number, restart: boolean) => {
+      if (!mutationLogActive || page.isClosed()) return;
+      const flushed = await page.evaluate(flushMutationLog) as MutationFlush;
+      if (flushed.records.length > 0 || flushed.dropped > 0) {
+        const batch = flushed.records as MutationBatch;
+        Object.assign(batch, {
+          snapshotIndex,
+          startedAt: mutationStartedAt,
+          flushedAt: Date.now(),
+          dropped: flushed.dropped,
+        });
+        mutationLogs.push(batch);
+      }
+      mutationLogActive = false;
+      if (restart && !page.isClosed()) {
+        mutationStartedAt = Date.now();
+        await page.evaluate(startMutationLog, mutationOptions);
+        mutationLogActive = true;
+      }
+    };
 
     const snapshot = async () => {
       if (page.isClosed()) return;
+      const shouldRestartMutations = mutationLogActive;
       try {
-        const dom = await page.evaluate(collectDomSnapshot);
+        if (mutationLogActive) await flushMutations(snapshotSequence, false);
+        const dom = await page.evaluate(collectDomSnapshot, {
+          maxNodes: _forensicsConfig.maxNodes,
+          maxSnapshotBytes: _forensicsConfig.maxSnapshotBytes,
+          maxTextLength: _forensicsConfig.maxTextLength,
+          redaction: _forensicsConfig.redaction,
+        });
         history.push(dom);
-        if (config?.snapshotCount && history.length > config.snapshotCount) {
-          history.splice(0, history.length - config.snapshotCount);
+        snapshotSequence++;
+        if (history.length > _forensicsConfig.snapshotCount) {
+          history.splice(0, history.length - _forensicsConfig.snapshotCount);
         }
       } catch (e) {
         // suppress expected page-closed errors, warn on unexpected ones
@@ -66,13 +117,25 @@ export const test = base.extend<ForensicsFixture>({
         if (!/closed|Target destroyed/i.test(msg)) {
           console.warn(`[forensics] snapshot() unexpected error:`, e);
         }
+      } finally {
+        if (shouldRestartMutations && !mutationLogActive && !page.isClosed()) {
+          try {
+            mutationStartedAt = Date.now();
+            await page.evaluate(startMutationLog, mutationOptions);
+            mutationLogActive = true;
+          } catch {
+            // page may close while restarting
+          }
+        }
       }
     };
 
     const startLogging = async () => {
       if (page.isClosed()) return;
       try {
-        await page.evaluate(startMutationLog);
+        if (mutationLogActive) await flushMutations(snapshotSequence, false);
+        mutationStartedAt = Date.now();
+        await page.evaluate(startMutationLog, mutationOptions);
         mutationLogActive = true;
       } catch {
         // page may be closed
@@ -83,24 +146,24 @@ export const test = base.extend<ForensicsFixture>({
     await use({
       snapshot,
       get history() { return Object.freeze(history.slice()); },
+      config: Object.freeze(_forensicsConfig),
       startMutationLog: startLogging,
-      get mutationLogs() { return Object.freeze(mutationLogs.map(b => Object.freeze(b))) as unknown as readonly MutationRecord[][]; },
+      get mutationLogs() { return Object.freeze(mutationLogs.map(b => Object.freeze(b))) as readonly MutationBatch[]; },
     });
 
     if (mutationLogActive) {
-      if (page.isClosed()) return;
-      try {
-        const records = await page.evaluate(stopMutationLog) as MutationRecord[];
-        if (records && records.length > 0) mutationLogs.push(records);
-      } catch {
-        // page may be closed
+      if (!page.isClosed()) {
+        try {
+          await flushMutations(snapshotSequence, false);
+        } catch {
+          // page may close during teardown
+        }
       }
     }
 
     if ((testInfo.status === 'failed' || testInfo.status === 'timedOut') && history.length > 0) {
       try {
-        const plugins = await getPlugins();
-        await generateReport(testInfo, history, mutationLogs, plugins);
+        await generateReport(testInfo, history, mutationLogs, _forensicsPlugins, _forensicsConfig);
       } catch (e) {
         console.error('[forensics] error:', e);
       }
@@ -111,25 +174,26 @@ export const test = base.extend<ForensicsFixture>({
 async function generateReport(
   testInfo: TestInfo,
   history: DomNode[],
-  mutationLogs: MutationRecord[][],
+  mutationLogs: MutationBatch[],
   plugins: ForensicsPlugin[],
+  config: ForensicsConfig,
 ) {
   const rawError = testInfo.error?.message ?? '';
-  const errorMessage = stripAnsi(rawError);
+  const errorMessage = redactSensitiveText(stripAnsi(rawError), config);
 
-  const parsed = parseErrorMessage(rawError);
+  const parsed = parseErrorMessage(errorMessage);
+  const traceEvidence = await collectTraceEvidence(testInfo, config, history);
 
   const diffs = history.length >= 2
     ? diffDomTrees(history[history.length - 2], history[history.length - 1])
     : [];
 
   const l = parsed.locator;
-  const locatorValue = l?.value;
-  const locatorType = l?.type;
-
   let trace: SelectorTrace | undefined;
-  if (locatorValue && locatorType && history.length > 1) {
-    trace = traceSelector(locatorValue, history, history.length - 1, locatorType);
+  if (l?.expression && history.length > 1) {
+    trace = traceSelector(l.expression, history, history.length - 1);
+  } else if (l?.value && l.type && history.length > 1) {
+    trace = traceSelector(l.value, history, history.length - 1, l.type);
   }
 
   let verdict = buildVerdict(parsed, trace, history, diffs);
@@ -142,6 +206,7 @@ async function generateReport(
     trace,
     mutationLogCount: mutationLogs.length,
     networkErrorCode: parsed.networkErrorCode,
+    traceEvidence,
   };
 
   if (plugins.length > 0) {
@@ -152,7 +217,7 @@ async function generateReport(
     history.push({ tag: '#document', attributes: {}, children: [], visible: false });
   }
 
-  let report = buildTextReport(testInfo.title, errorMessage, history, diffs, verdict, mutationLogs);
+  let report = buildTextReport(testInfo.title, errorMessage, history, diffs, verdict, mutationLogs, traceEvidence);
   let html = generateHtmlReport({
     testName: testInfo.title,
     errorMessage,
@@ -161,6 +226,8 @@ async function generateReport(
     trace,
     verdict,
     mutationLogs,
+    traceEvidence,
+    snapshotLimit: config.snapshotCount,
   });
 
   if (plugins.length > 0) {
@@ -171,8 +238,19 @@ async function generateReport(
 
   const txtPath = testInfo.outputPath('forensics-report.txt');
   const htmlPath = testInfo.outputPath('forensics-report.html');
+  const jsonPath = testInfo.outputPath('forensics-report.json');
   await writeFile(txtPath, report, 'utf-8');
   await writeFile(htmlPath, html, 'utf-8');
+  await writeFile(jsonPath, JSON.stringify({
+    schemaVersion: 2,
+    testName: testInfo.title,
+    errorMessage,
+    verdict,
+    diffs,
+    mutationLogs,
+    trace: traceEvidence,
+    snapshots: history,
+  }, null, 2), 'utf-8');
 
   await testInfo.attach('forensics-report-txt', {
     path: txtPath,
@@ -182,6 +260,46 @@ async function generateReport(
     path: htmlPath,
     contentType: 'text/html',
   });
+  await testInfo.attach('forensics-report-json', {
+    path: jsonPath,
+    contentType: 'application/json',
+  });
+}
+
+async function collectTraceEvidence(
+  testInfo: TestInfo,
+  config: ForensicsConfig,
+  history: DomNode[],
+): Promise<TraceEvidence | undefined> {
+  if (!config.trace.enabled) return undefined;
+  const attached = testInfo.attachments.find(attachment =>
+    Boolean(attachment.path) && (attachment.name === 'trace' || attachment.path!.endsWith('trace.zip')));
+  const fallback = testInfo.outputPath('trace.zip');
+  const path = attached?.path ?? fallback;
+  try {
+    await access(path);
+  } catch {
+    return undefined;
+  }
+  const evidence = await readPlaywrightTrace(path, {
+    maxEvents: config.trace.maxEvents,
+    redact: value => redactSensitiveText(value, config),
+  });
+  const captured = history
+    .map((snapshot, snapshotIndex) => ({ snapshotIndex, capturedAt: snapshot.capturedAt }))
+    .filter((entry): entry is { snapshotIndex: number; capturedAt: number } => typeof entry.capturedAt === 'number');
+  let correlated = 0;
+  for (const action of evidence.actions) {
+    if (typeof action.wallTime !== 'number' || captured.length === 0) continue;
+    const nearest = captured.reduce((best, entry) =>
+      Math.abs(entry.capturedAt - action.wallTime!) < Math.abs(best.capturedAt - action.wallTime!) ? entry : best);
+    action.snapshotIndex = nearest.snapshotIndex;
+    correlated++;
+  }
+  if (evidence.actions.length > 0 && correlated === 0) {
+    evidence.warnings.push('Trace and DOM snapshot timestamp domains could not be correlated');
+  }
+  return evidence;
 }
 
 function buildTextReport(
@@ -191,6 +309,7 @@ function buildTextReport(
   diffs: DiffResult[],
   verdict: Verdict,
   mutationLogs: MutationRecord[][],
+  traceEvidence?: TraceEvidence,
 ): string {
   const lines: string[] = [
     '=== PLAYWRIGHT FORENSICS REPORT ===',
@@ -207,7 +326,8 @@ function buildTextReport(
   if (mutationLogs.length > 0) {
     lines.push('--- MUTATION LOG ---');
     for (let i = 0; i < mutationLogs.length; i++) {
-      lines.push(`  Batch ${i + 1}: ${mutationLogs[i].length} mutations`);
+      const batch = mutationLogs[i] as MutationBatch;
+      lines.push(`  Snapshot ${Math.max(0, batch.snapshotIndex - 1)} → ${batch.snapshotIndex}: ${batch.length} mutations${batch.dropped ? ` (${batch.dropped} dropped)` : ''}`);
       for (const m of mutationLogs[i].slice(0, 10)) {
         let desc = `    [${m.type}] ${m.target}`;
         if (m.attributeName) desc += ` attr="${m.attributeName}"`;
@@ -219,6 +339,16 @@ function buildTextReport(
         lines.push(`    ... and ${mutationLogs[i].length - 10} more`);
       }
     }
+    lines.push('');
+  }
+
+  if (traceEvidence) {
+    lines.push('--- PLAYWRIGHT TRACE EVIDENCE ---');
+    lines.push(`Actions: ${traceEvidence.actions.length}`);
+    lines.push(`Network events: ${traceEvidence.network.length}`);
+    lines.push(`Console events: ${traceEvidence.console.length}`);
+    for (const warning of traceEvidence.warnings) lines.push(`  Warning: ${warning}`);
+    if (traceEvidence.truncated) lines.push('  Warning: trace events truncated by configured limit');
     lines.push('');
   }
 

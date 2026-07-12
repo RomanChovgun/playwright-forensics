@@ -1,23 +1,17 @@
 import type { DomNode } from '../collector/dom-snapshot.js';
 
 export interface DiffResult {
-  type: 'added' | 'removed' | 'changed';
+  type: 'added' | 'removed' | 'changed' | 'moved';
   path: string;
   oldValue?: string;
   newValue?: string;
+  confidence?: 'confirmed' | 'likely' | 'inferred';
 }
 
 export function diffDomTrees(before: DomNode, after: DomNode): DiffResult[] {
   const changes: DiffResult[] = [];
   computeDiff(before, after, '', changes);
   return changes;
-}
-
-function nodeKey(node: DomNode, index: number): string {
-  if (node.id) return `id:${node.id}`;
-  const testId = node.attributes['data-testid'];
-  if (testId) return `testid:${testId}`;
-  return `${node.tag}:${node.text ?? ''}@${index}`;
 }
 
 function computeDiff(
@@ -47,12 +41,14 @@ function computeDiff(
     });
   }
 
-  if (before.text !== after.text) {
+  const beforeText = before.directText ?? before.text;
+  const afterText = after.directText ?? after.text;
+  if (beforeText !== afterText) {
     changes.push({
       type: 'changed',
       path: currentPath,
-      oldValue: before.text,
-      newValue: after.text,
+      oldValue: beforeText,
+      newValue: afterText,
     });
   }
 
@@ -76,11 +72,9 @@ function computeDiff(
     });
   }
 
-  // Diff full attribute map (excluding data-testid which is tracked by key identity)
+  // Attribute identity changes are evidence too; matching no longer depends solely on test id.
   const beforeAttrs = { ...before.attributes };
   const afterAttrs = { ...after.attributes };
-  delete beforeAttrs['data-testid'];
-  delete afterAttrs['data-testid'];
   const allAttrKeys = new Set([...Object.keys(beforeAttrs), ...Object.keys(afterAttrs)]);
   for (const k of allAttrKeys) {
     if (beforeAttrs[k] !== afterAttrs[k]) {
@@ -93,25 +87,80 @@ function computeDiff(
     }
   }
 
-  const beforeMap = new Map<string, DomNode>();
-  before.children.forEach((child, i) => {
-    const key = nodeKey(child, i);
-    if (!beforeMap.has(key)) beforeMap.set(key, child);
-  });
-
-  const afterMap = new Map<string, DomNode>();
-  after.children.forEach((child, i) => {
-    const key = nodeKey(child, i);
-    if (!afterMap.has(key)) afterMap.set(key, child);
-  });
-
-  const allKeys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
-
-  for (const key of allKeys) {
-    const beforeChild = beforeMap.get(key);
-    const afterChild = afterMap.get(key);
+  const matches = matchChildren(before.children, after.children);
+  for (const match of matches) {
+    if (match.beforeIndex === undefined) {
+      computeDiff(undefined, after.children[match.afterIndex!], currentPath, changes);
+      continue;
+    }
+    if (match.afterIndex === undefined) {
+      computeDiff(before.children[match.beforeIndex], undefined, currentPath, changes);
+      continue;
+    }
+    const beforeChild = before.children[match.beforeIndex];
+    const afterChild = after.children[match.afterIndex];
     computeDiff(beforeChild, afterChild, currentPath, changes);
+    if (match.beforeIndex !== match.afterIndex && match.confidence !== 'inferred') {
+      changes.push({
+        type: 'moved',
+        path: `${currentPath}/${afterChild.tag}${nodeSuffix(afterChild)}`,
+        oldValue: `index=${match.beforeIndex}`,
+        newValue: `index=${match.afterIndex}`,
+        confidence: match.confidence,
+      });
+    }
   }
+}
+
+interface ChildMatch {
+  beforeIndex?: number;
+  afterIndex?: number;
+  confidence: 'confirmed' | 'likely' | 'inferred';
+}
+
+function scorePair(before: DomNode, after: DomNode, beforeIndex: number, afterIndex: number): number {
+  if (before.tag !== after.tag) return -1;
+  if (before.id && before.id === after.id) return 100;
+  const beforeTestId = before.attributes['data-testid'];
+  const afterTestId = after.attributes['data-testid'];
+  if (beforeTestId && beforeTestId === afterTestId) return 95;
+  if (before.structuralId && before.structuralId === after.structuralId) return 90;
+  if (before.path && before.path === after.path) return 80;
+  if (before.accessibleName && before.accessibleName === after.accessibleName) return 65;
+  const beforeText = before.directText ?? before.text;
+  const afterText = after.directText ?? after.text;
+  if (beforeText && beforeText === afterText) return 55;
+  if (beforeIndex === afterIndex) return 20;
+  return 10;
+}
+
+function matchChildren(before: DomNode[], after: DomNode[]): ChildMatch[] {
+  const candidates: { beforeIndex: number; afterIndex: number; score: number }[] = [];
+  before.forEach((left, beforeIndex) => after.forEach((right, afterIndex) => {
+    const score = scorePair(left, right, beforeIndex, afterIndex);
+    if (score >= 0) candidates.push({ beforeIndex, afterIndex, score });
+  }));
+  candidates.sort((a, b) => b.score - a.score);
+  const usedBefore = new Set<number>();
+  const usedAfter = new Set<number>();
+  const result: ChildMatch[] = [];
+  for (const candidate of candidates) {
+    if (usedBefore.has(candidate.beforeIndex) || usedAfter.has(candidate.afterIndex)) continue;
+    usedBefore.add(candidate.beforeIndex);
+    usedAfter.add(candidate.afterIndex);
+    result.push({
+      beforeIndex: candidate.beforeIndex,
+      afterIndex: candidate.afterIndex,
+      confidence: candidate.score >= 90 ? 'confirmed' : candidate.score >= 50 ? 'likely' : 'inferred',
+    });
+  }
+  before.forEach((_, index) => {
+    if (!usedBefore.has(index)) result.push({ beforeIndex: index, confidence: 'confirmed' });
+  });
+  after.forEach((_, index) => {
+    if (!usedAfter.has(index)) result.push({ afterIndex: index, confidence: 'confirmed' });
+  });
+  return result;
 }
 
 function nodeSuffix(node: DomNode): string {

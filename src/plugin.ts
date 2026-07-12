@@ -6,6 +6,7 @@ import type { ParsedError } from './analyzer/error-parser.js';
 import type { DomNode } from './collector/dom-snapshot.js';
 import type { SelectorTrace } from './analyzer/selector-tracer.js';
 import type { DiffResult } from './analyzer/dom-diff.js';
+import type { TraceEvidence } from './trace/trace-reader.js';
 
 let _require: ReturnType<typeof createRequire> | null = null;
 
@@ -24,6 +25,7 @@ export interface PluginContext {
   trace?: SelectorTrace;
   mutationLogCount: number;
   networkErrorCode?: string;
+  traceEvidence?: TraceEvidence;
 }
 
 export interface ForensicsPlugin {

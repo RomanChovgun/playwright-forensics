@@ -1,6 +1,6 @@
 {
   "name": "playwright-forensics",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.1",
   "description": "Test forensics for Playwright — causal analysis of test failures with DOM snapshots, diff, and human-readable verdicts",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,7 +10,7 @@
     "npm": ">=9"
   },
   "bin": {
-    "pwf": "./dist/cli.js"
+    "pwf": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -29,7 +29,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
@@ -38,6 +39,9 @@
     "prebuild": "npm run clean",
     "test": "playwright test",
     "test:ci": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "test:hardening": "playwright test test/scenarios/unit.spec.ts test/scenarios/hardening.spec.ts",
+    "pack:check": "npm pack --dry-run",
     "test:headed": "playwright test --headed",
     "test:report": "playwright test --reporter=html",
     "dev": "tsc --watch",
@@ -48,7 +52,7 @@
     "@playwright/test": ">=1.40"
   },
   "optionalDependencies": {
-    "chokidar": "^5.0.0"
+    "chokidar": "^4.0.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
@@ -67,20 +71,23 @@
     "quality-assurance"
   ],
   "license": "MIT",
-  "author": {
-    "name": "Roman Chovgun",
-    "url": "https://t.me/romanchovgun"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
+  "author": "Roman Chovgun (https://t.me/romanchovgun)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anomalyco/playwright-forensics.git"
+    "url": "git+https://github.com/RomanChovgun/playwright-forensics.git"
   },
   "bugs": {
-    "url": "https://github.com/anomalyco/playwright-forensics/issues"
+    "url": "https://github.com/RomanChovgun/playwright-forensics/issues"
   },
-  "homepage": "https://github.com/anomalyco/playwright-forensics#readme",
-  "funding": {
-    "type": "individual",
-    "url": "https://github.com/sponsors/anomalyco"
+  "homepage": "https://github.com/RomanChovgun/playwright-forensics#readme",
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "directories": {
+    "test": "test"
   }
 }

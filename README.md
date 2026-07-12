@@ -1,7 +1,6 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Playwright-45ba4b?style=for-the-badge&logo=Playwright&logoColor=white" alt="Playwright" />
   <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/npm/v/playwright-forensics?style=for-the-badge&logo=npm&label=version" alt="npm version" />
   <img src="https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node >= 18" />
   <img src="https://img.shields.io/github/stars/RomanChovgun/playwright-forensics?style=for-the-badge&logo=github&label=stars" alt="GitHub stars" />
   <img src="https://img.shields.io/github/last-commit/RomanChovgun/playwright-forensics?style=for-the-badge&logo=github&label=updated" alt="last commit" />
@@ -11,8 +10,8 @@
 
 <div align="center">
   <h1>🔍 Playwright Forensics</h1>
-  <p><strong>Post-mortem analysis for Playwright tests.<br />
-  Not "test failed" — a full causal reconstruction of what went wrong in the DOM.</strong></p>
+  <p><strong>Evidence-based post-mortem analysis for Playwright tests.<br />
+  Not just "test failed" — a confidence-rated explanation of what likely went wrong.</strong></p>
 
   <p>
     <a href="#-the-problem">The Problem</a> •
@@ -60,11 +59,11 @@ Instead of just logging test steps, **playwright-forensics** treats each test as
 
 | Concept | What it means |
 |---|---|
-| **Time-Travel DOM** | Every `snapshot()` call freezes the page state — a complete DOM skeleton with attributes, visibility, text, and boolean state. You can rewind to any moment. |
+| **Time-Travel DOM** | Every `snapshot()` call captures a bounded, redacted DOM representation with attributes, visibility, direct text, and boolean state. |
 | **Selector Archaeology** | The locator from the error message is traced backwards through the snapshot history. When did it last exist? What changed after that? |
-| **Structural Diff** | Not just text comparison — a tree-aware diff that matches children by identity (id → testid → tag+text) rather than position. Children that shift order aren't falsely reported as "added and removed". |
-| **Error Pattern Matching** | Playwright error messages are parsed against 30+ known patterns. A "Timeout 5000ms exceeded" is classified differently depending on whether it's a navigation timeout, a locator not found, or an element not stable. |
-| **Causal Chain** | All of this is assembled into a human-readable verdict with a recommendation — not just what failed, but **why it failed** and **what to do about it**. |
+| **Structural Diff** | A tree-aware diff matches children using structural and semantic evidence rather than position alone. Ambiguous fallback matches are marked with lower confidence. |
+| **Error Pattern Matching** | Playwright error messages are parsed against 28 ordered patterns. A timeout is classified differently for navigation, locator lookup, and actionability. |
+| **Causal Chain** | Evidence is assembled into a human-readable verdict, confidence level, limitations, and recommendation. |
 
 The goal: **Every test failure should come with a debrief.** Not a stack trace — an explanation.
 
@@ -119,22 +118,28 @@ The goal: **Every test failure should come with a debrief.** Not a stack trace �
 
 | Module | What it does | Key design decision |
 |---|---|---|
-| `dom-snapshot.ts` | Serialises the DOM from inside the browser into a lightweight `DomNode` tree | Uses `checkVisibility()` instead of `getBoundingClientRect()` — no layout thrashing. Traverses open Shadow DOM roots. Captures boolean attributes (`disabled`, `checked`, `readonly`, etc.) as a separate field — they're invisible in `getAttribute()`. |
-| `mutation-log.ts` | Standalone `MutationObserver` injected into the page via `page.evaluate()` | Records are stored on `window.__forensicsMutationRecords` as a global array — survives page navigations within the same origin. Each record includes a CSS selector path to the target element, built by walking up the tree with `:nth-of-type()` disambiguation. |
+| `dom-snapshot.ts` | Serialises a bounded, redacted DOM tree | Captures direct text, ARIA semantics, structural identity, open Shadow DOM and CSS visibility including opacity. |
+| `mutation-log.ts` | Bounded `MutationObserver` injected via `page.evaluate()` | Flushes one redacted batch at each snapshot boundary and reports dropped ring-buffer records. |
 | `error-patterns.ts` | 28 regex patterns ordered from most specific to most general | Critical ordering constraint: `"wait-visible-enabled-stable"` must precede `"wait-visible"` because the former is a superset of the latter. This is documented in a JSDoc warning. |
-| `error-parser.ts` | Extracts locators, timeouts, expected/actual values from error text. Classifies errors against 28 ordered patterns. | Supports chained locators: `getByTestId('list').getByText('Item 1')` is parsed into a chain array. Handles both the error message body and the `Locator:` annotation. |
-| `selector-tracer.ts` | Traces a locator backwards through snapshot history | Pre-computes a single-pass cache (`O(n)` per snapshot) instead of searching from scratch for each step. Detects `className`, `text`, `visibility`, `data-testid`, and `booleanAttrs` changes between steps. |
-| `dom-diff.ts` | Structural diff of two `DomNode` trees | Children are matched by **identity key** (`id` → `data-testid` → tag+text) rather than index. This prevents false positives when sibling elements are reordered. Tracks tag existence, class, text, visibility, and boolean attribute changes. |
-| `verdict-builder.ts` | 26 verdict templates with context-aware explanations | A `locator-timeout` verdict is dynamically categorised: if the element was found at the failure step → actionability issue; if it disappeared earlier → `dom-disappeared`; if never found → `locator-not-found`. Each verdict includes a human-readable recommendation. |
+| `error-parser.ts` | Extracts failure evidence and a locator AST | Preserves chains and supports string/regex, exact/name, filter text, nth/first/last, CSS, basic XPath and frames. |
+| `selector-tracer.ts` | Evaluates the AST through snapshot history | Uses scoped chains, implicit roles, accessible names and direct text; ambiguity becomes a limitation. |
+| `dom-diff.ts` | Identity-aware structural diff | Keeps text/testid mutations as `changed` and reorder as `moved`, with match confidence. |
+| `verdict-builder.ts` | 25 evidence-based verdict templates | Emits `confirmed`, `likely`, or `insufficient-evidence` with evidence and limitations. |
+| `trace-reader.ts` | Best-effort `trace.zip` reader | Adds actions, network and console evidence; unknown records degrade to warnings. |
 | `plugin.ts` | Full plugin system with `onVerdict` and `onReport` hooks | Lazy `createRequire(import.meta.url)` — first call only. Falls back to dynamic `import()`. Duplicate plugin detection with a console warning. Plugins can modify the verdict or the report text/HTML. |
 
 ---
 
 ## 📦 Installation
 
+The package is currently an unpublished **0.2.0 release candidate**. Install its verified tarball:
+
 ```bash
-npm install playwright-forensics --save-dev
+npm ci && npm run build && npm pack
+npm install --save-dev ./playwright-forensics-0.2.0-rc.1.tgz
 ```
+
+`npm install playwright-forensics --save-dev` will be supported after the public release.
 
 Requires **Node >= 18** and **@playwright/test >= 1.40**.
 
@@ -340,6 +345,17 @@ Create `.forensicsrc` or `forensics.config.json` in your project root:
 ```json
 {
   "snapshotCount": 10,
+  "maxNodes": 5000,
+  "maxSnapshotBytes": 2000000,
+  "maxTextLength": 500,
+  "maxMutationRecords": 1000,
+  "redaction": {
+    "enabled": true,
+    "replacement": "[REDACTED]",
+    "attributes": ["value", "authorization", "cookie", "data-token"],
+    "urlQuery": true
+  },
+  "trace": { "enabled": true, "maxEvents": 1000 },
   "plugins": ["./path/to/my-plugin.js"]
 }
 ```
@@ -358,14 +374,20 @@ Or add to `package.json`:
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `snapshotCount` | `number` | unlimited | Maximum number of DOM snapshots to keep (oldest trimmed from head). Limits report size for long-running tests. |
+| `snapshotCount` | `number` | `25` | Maximum snapshots retained and embedded in reports. |
+| `maxNodes` | `number` | `5000` | Maximum nodes per snapshot. |
+| `maxSnapshotBytes` | `number` | `2000000` | Maximum serialized bytes per snapshot. |
+| `maxTextLength` | `number` | `500` | Maximum captured text/attribute length. |
+| `maxMutationRecords` | `number` | `1000` | Mutation ring-buffer size per interval. |
+| `redaction` | `object` | enabled | Sensitive attributes, form values, and URL query policy. |
+| `trace` | `object` | enabled | Best-effort trace ingestion and event limit. |
 | `plugins` | `string[]` | `[]` | Paths to plugin files (see Plugin System). |
 
 ---
 
 ## 🎯 Failure Scenarios
 
-We tested against **16 real-world failure scenarios** (plus a passing baseline), each with its own HTML page that reproduces the exact conditions:
+The test suite covers **16 diagnostic failure scenarios**, one closed-page teardown regression, and a passing baseline:
 
 | # | Scenario | Page | Failure Detected | Verdict Category |
 |---|---|---|---|---|
@@ -376,18 +398,19 @@ We tested against **16 real-world failure scenarios** (plus a passing baseline),
 | 04 | API data loads too slowly | `page4` | `locator-timeout` | `locator-not-found` |
 | 05 | Modal overlay blocks target button | `page5` | `obscured` | `actionability` |
 | 06 | Element hidden (display/visibility/opacity) | `page6` | `not-visible` | `actionability` |
-| 07 | Iframe content replaced mid-test | `page7` | `locator-timeout` | `dom-disappeared` |
+| 07 | Iframe content replaced mid-test | `page7` | `locator-timeout` | `locator-not-found` with insufficient frame evidence |
 | 08 | CSS animation prevents stabilisation | `page8` | `not-stable` | `actionability` |
 | 09 | Multiple elements match (strict mode) | `page9` | `strict-mode-violation` | `locator-not-found` |
 | 10 | Button has `disabled` attribute | `page10` | `not-enabled` | `actionability` |
 | 11 | Page closed during interaction | `page3` | `target-closed` | `runtime` |
 | 12 | Network error (unreachable port) | — | `network-error` | `network` |
-| 13 | Navigation race condition | `page13` | `target-closed` | `runtime` |
+| 13 | Navigation replaces previous DOM | `page13` | `locator-timeout` | `dom-disappeared` |
 | 14 | `fill()` on a non-input `<div>` | `page14` | `not-editable` | `actionability` |
 | 15 | `check()` on a `<button>` | `page15` | `not-checkbox` | `actionability` |
 | 16 | Mutation logging captures re-render | `page1` | `locator-timeout` with mutation data | `dom-disappeared` |
+| 17 | Page closes while mutation logging is active | inline page | `target-closed` | `runtime` |
 
-All 16 failure scenarios (01–16) produce correct verdicts with appropriate categories, explanations, and recommendations. The passing baseline (00) does not generate a forensics report.
+CI validates generated TXT/HTML/JSON artifacts and expected verdict categories for all diagnostic scenarios. Verdicts include confidence and limitations when evidence is ambiguous. The passing baseline (00) does not generate a report.
 
 ---
 
@@ -475,11 +498,11 @@ The generated HTML report is a self-contained file (no external dependencies) wi
 
 ### Why `checkVisibility()` instead of `getBoundingClientRect()`?
 
-The standard approach to checking element visibility is `getBoundingClientRect()` + checking dimensions. This triggers a synchronous layout calculation (layout thrashing) and misses CSS-level invisibility (`visibility: hidden`, `opacity: 0`). The `checkVisibility()` method was added to the platform specifically for this use case — it checks all CSS visibility conditions in a single call without forcing layout.
+The collector calls `checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })`, then uses computed style and client rects as a compatibility fallback. It captures `display:none`, `visibility:hidden`, and `opacity:0`; this is diagnostic visibility, not a complete reimplementation of Playwright actionability.
 
 ### Why key-based child matching in DOM diff?
 
-Index-based matching assumes the DOM tree structure is stable between snapshots. In dynamic applications (SPA routing, list re-rendering, conditional rendering), children are frequently reordered. Index-based diff would report every reordering as `removed` + `added` pairs — noise that obscures real changes. Key-based matching (by `id` → `data-testid` → tag+text) matches logical elements across structural changes, producing diffs that reflect actual semantic changes.
+Index-based matching assumes a stable tree. The matcher instead prioritises structural identity, `id`, `data-testid`, accessible name, and direct text, with a low-confidence positional fallback. Ambiguous matches are marked rather than presented as certain.
 
 ### Why `Object.freeze()` on history?
 
@@ -517,24 +540,16 @@ npx playwright test test/scenarios/unit.spec.ts
 ```
 
 The test suite includes:
-- **16 integration tests** — each reproducing a real failure scenario with a dedicated HTML page and Playwright `test.fail()` assertions
+- **17 failure integration tests** — 16 diagnostic scenarios plus the closed-page mutation regression
 - **1 passing baseline test**
-- **73 unit tests** — covering `matchPattern`, `parseErrorMessage`, `diffDomTrees`, `traceSelector`, `buildVerdict`, `stripAnsi`, `escapeHtml`, plugin system, and config loading
+- **Focused hardening tests** — locator AST/ARIA semantics, safe collection, redaction/limits, mutation batching, identity diff, trace parsing, and report safety
 - **CI** on push/PR to `main` — matrix: Ubuntu / macOS / Windows × Node 18 / 20 / 22
 
 ---
 
-## 📄 License
+## Original Concept
 
-MIT © [Roman Chovgun](https://github.com/RomanChovgun) — [Telegram](https://t.me/romanchovgun)
+The original idea and product direction for Playwright Forensics were created by **Roman Chovgun**.
 
----
-
-## 🧑‍💻 Built by Roman Chovgun
-
-**Roman Chovgun** is a test automation architect passionate about making developer tools that turn cryptic test failures into clear, actionable stories.
-
-- 🔗 [GitHub](https://github.com/RomanChovgun)
-- 💬 [Telegram](https://t.me/romanchovgun)
-
-If you find this tool valuable, consider [sponsoring](https://github.com/sponsors/RomanChovgun) or starring the repo. Contributions, issues, and feature requests are always welcome.
+- [GitHub](https://github.com/RomanChovgun)
+- [Telegram](https://t.me/romanchovgun)

@@ -1,20 +1,28 @@
 import type { DomNode } from '../collector/dom-snapshot.js';
+import { queryLocator } from './locator/engine.js';
+import type { LocatorExpression } from './locator/types.js';
 
 export interface SelectorTrace {
   found: boolean;
   stepFound?: number;
   lastKnownState?: DomNode;
   disappearanceChanges?: string[];
+  confidence?: 'confirmed' | 'likely' | 'insufficient-evidence';
+  limitations?: string[];
 }
 
 export function traceSelector(
-  locatorValue: string,
+  locatorValue: string | LocatorExpression,
   snapshotHistory: DomNode[],
   failedStep: number,
   locatorType?: string,
 ): SelectorTrace {
-  // Cache: pre-compute findNodeByLocator for all steps in a single pass
-  const cache = snapshotHistory.map(s => findNodeByLocator(s, locatorValue, locatorType));
+  const expression = typeof locatorValue === 'string'
+    ? legacyExpression(locatorValue, locatorType)
+    : locatorValue;
+  const results = snapshotHistory.map(snapshot => queryLocator(snapshot, expression));
+  const cache = results.map(result => result.nodes[0] ?? null);
+  const evidence = results[failedStep];
 
   const matchAtFailure = cache[failedStep];
   if (matchAtFailure) {
@@ -23,64 +31,48 @@ export function traceSelector(
       stepFound: failedStep,
       lastKnownState: matchAtFailure,
       disappearanceChanges: [`Element exists in the DOM at the failure point but failed actionability checks`],
+      confidence: evidence.confidence,
+      limitations: evidence.limitations,
     };
   }
 
   for (let i = failedStep - 1; i >= 0; i--) {
     if (cache[i]) {
-      const changes = computeChangesBetween(cache, i, failedStep);
+      const changes = computeChangesBetween(cache, snapshotHistory, i, failedStep);
       return {
         found: true,
         stepFound: i,
         lastKnownState: cache[i]!,
         disappearanceChanges: changes,
+        confidence: results[i].confidence,
+        limitations: results[i].limitations,
       };
     }
   }
-  return { found: false };
+  return {
+    found: false,
+    confidence: evidence?.confidence ?? 'insufficient-evidence',
+    limitations: evidence?.limitations,
+  };
 }
 
-function findNodeByLocator(node: DomNode, value: string, type?: string): DomNode | null {
-  if (matchesLocator(node, value, type)) return node;
-  for (const child of node.children) {
-    const found = findNodeByLocator(child, value, type);
-    if (found) return found;
-  }
-  return null;
-}
-
-function matchesLocator(node: DomNode, value: string, type?: string): boolean {
+function legacyExpression(value: string, type?: string): LocatorExpression {
+  const matcher = { value };
   switch (type) {
-    case 'getByTestId':
-      return node.attributes['data-testid'] === value;
-    case 'getByRole':
-      return node.attributes['role'] === value
-        || node.attributes['aria-label'] === value
-        || node.attributes['aria-roledescription'] === value;
-    case 'getByLabel':
-      return (node.attributes['aria-label'] === value)
-        || (node.attributes['aria-labelledby'] === value)
-        || (node.text?.includes(value) ?? false);
-    case 'getByText':
-      return node.text?.includes(value) ?? false;
-    case 'getByPlaceholder':
-      return node.attributes['placeholder'] === value;
-    case 'getByTitle':
-      return node.attributes['title'] === value;
-    case 'getByAltText':
-      return node.attributes['alt'] === value;
-    default:
-      if (value.startsWith('#')) return node.id === value.slice(1);
-      if (value.startsWith('.')) return node.className?.includes(value.slice(1)) ?? false;
-      return node.tag === value || node.id === value
-        || node.attributes['data-testid'] === value
-        || node.attributes['aria-label'] === value
-        || node.attributes['name'] === value;
+    case 'getByTestId': return { source: value, steps: [{ kind: 'testId', matcher }] };
+    case 'getByRole': return { source: value, steps: [{ kind: 'role', role: value }] };
+    case 'getByLabel': return { source: value, steps: [{ kind: 'label', matcher }] };
+    case 'getByText': return { source: value, steps: [{ kind: 'text', matcher }] };
+    case 'getByPlaceholder': return { source: value, steps: [{ kind: 'placeholder', matcher }] };
+    case 'getByTitle': return { source: value, steps: [{ kind: 'title', matcher }] };
+    case 'getByAltText': return { source: value, steps: [{ kind: 'altText', matcher }] };
+    default: return { source: value, steps: [{ kind: 'testId', matcher }] };
   }
 }
 
 function computeChangesBetween(
   cache: (DomNode | null)[],
+  snapshots: DomNode[],
   startStep: number,
   endStep: number,
 ): string[] {
@@ -88,7 +80,7 @@ function computeChangesBetween(
   for (let step = startStep; step < endStep; step++) {
     const globalStep = step + 1;
     const nodeBefore = cache[step];
-    const nodeAfter = cache[step + 1];
+    const nodeAfter = cache[step + 1] ?? (nodeBefore ? findSameNode(snapshots[step + 1], nodeBefore) : null);
 
     if (nodeBefore && !nodeAfter) {
       changes.push(`Element removed from DOM at step ${globalStep}`);
@@ -96,8 +88,10 @@ function computeChangesBetween(
       if (nodeBefore.className !== nodeAfter.className) {
         changes.push(`CSS class changed from "${nodeBefore.className}" to "${nodeAfter.className}" at step ${globalStep}`);
       }
-      if (nodeBefore.text !== nodeAfter.text) {
-        changes.push(`Text changed from "${nodeBefore.text}" to "${nodeAfter.text}" at step ${globalStep}`);
+      const beforeText = nodeBefore.directText ?? nodeBefore.text;
+      const afterText = nodeAfter.directText ?? nodeAfter.text;
+      if (beforeText !== afterText) {
+        changes.push(`Text changed from "${beforeText}" to "${afterText}" at step ${globalStep}`);
       }
       if (nodeBefore.visible && !nodeAfter.visible) {
         changes.push(`Element became hidden at step ${globalStep}`);
@@ -121,4 +115,20 @@ function computeChangesBetween(
     }
   }
   return changes;
+}
+
+function findSameNode(root: DomNode, before: DomNode): DomNode | null {
+  const nodes: DomNode[] = [root];
+  const sameTag: DomNode[] = [];
+  while (nodes.length) {
+    const node = nodes.shift()!;
+    if (node.tag === before.tag) sameTag.push(node);
+    if (
+      (before.structuralId && node.structuralId === before.structuralId)
+      || (before.id && node.id === before.id)
+      || (before.path && node.path === before.path && node.tag === before.tag)
+    ) return node;
+    nodes.push(...node.children);
+  }
+  return sameTag.length === 1 ? sameTag[0] : null;
 }

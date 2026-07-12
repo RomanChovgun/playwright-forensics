@@ -1,4 +1,6 @@
 import { matchPattern } from './error-patterns.js';
+import { parseLocatorExpression } from './locator/parser.js';
+import type { LocatorExpression, LocatorStep } from './locator/types.js';
 
 export type FailureType =
   | 'locator-timeout'
@@ -31,6 +33,7 @@ export interface ParsedLocator {
   type: string;
   value: string;
   chain?: { type: string; value: string }[];
+  expression?: LocatorExpression;
 }
 
 export interface ParsedError {
@@ -43,17 +46,6 @@ export interface ParsedError {
   strictCount?: number;
   rawMessage: string;
 }
-
-const LOCATOR_PATTERNS = [
-  { pattern: /getByTestId\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByTestId' },
-  { pattern: /getByText\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByText' },
-  { pattern: /getByRole\(\s*['"]([^'"]+)['"]\s*(?:,\s*\{[^}]*\})?\s*\)/g, type: 'getByRole' },
-  { pattern: /getByLabel\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByLabel' },
-  { pattern: /getByPlaceholder\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByPlaceholder' },
-  { pattern: /getByAltText\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByAltText' },
-  { pattern: /getByTitle\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'getByTitle' },
-  { pattern: /locator\(\s*['"]([^'"]+)['"]\s*\)/g, type: 'locator' },
-];
 
 export function parseErrorMessage(error: string): ParsedError {
   const networkMatch = error.match(/net::(ERR_\w+)/);
@@ -75,46 +67,29 @@ export function parseErrorMessage(error: string): ParsedError {
 }
 
 function extractLocator(error: string): ParsedLocator | undefined {
-  const seen = new Set<string>();
-  const parts: { type: string; value: string }[] = [];
-
-  for (const { pattern, type } of LOCATOR_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(error)) !== null) {
-      const key = `${type}:${match[1]}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        parts.push({ type, value: match[1] });
-      }
-    }
-  }
-
-  if (parts.length === 0) {
-    const simpleMatch = error.match(/Locator:\s*(.+)/);
-    if (simpleMatch) {
-      const locText = simpleMatch[1].trim();
-      for (const { pattern, type } of LOCATOR_PATTERNS) {
-        pattern.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(locText)) !== null) {
-          const key = `${type}:${match[1]}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            parts.push({ type, value: match[1] });
-          }
-        }
-      }
-    }
-  }
-
+  const expression = parseLocatorExpression(error);
+  if (!expression) return undefined;
+  const parts = expression.steps.map(displayStep).filter((part): part is { type: string; value: string } => Boolean(part));
   if (parts.length === 0) return undefined;
+  return {
+    type: parts[0].type,
+    value: parts[0].value,
+    chain: parts.length > 1 ? parts.slice(1) : undefined,
+    expression,
+  };
+}
 
-  const result: ParsedLocator = { type: parts[0].type, value: parts[0].value };
-  if (parts.length > 1) {
-    result.chain = parts.slice(1);
-  }
-  return result;
+function displayStep(step: LocatorStep): { type: string; value: string } | undefined {
+  if ('matcher' in step) return {
+    type: `getBy${step.kind === 'testId' ? 'TestId' : step.kind[0].toUpperCase() + step.kind.slice(1)}`,
+    value: step.matcher.value,
+  };
+  if (step.kind === 'role') return { type: 'getByRole', value: step.role };
+  if (step.kind === 'css' || step.kind === 'xpath') return { type: 'locator', value: step.value };
+  if (step.kind === 'nth') return { type: 'nth', value: String(step.index) };
+  if (step.kind === 'first' || step.kind === 'last') return { type: step.kind, value: '' };
+  if (step.kind === 'frame') return { type: 'frameLocator', value: step.value };
+  return undefined;
 }
 
 function extractTimeout(error: string): number | undefined {
